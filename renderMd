@@ -1,0 +1,32 @@
+#!/usr/bin/env Rscript
+'usage: renderMd [options] (INFILE)
+
+options:
+-h --help          show this
+-f --format=<fmt>  output format [default: html_document]
+
+formatting options:
+    html_document          : single html with toc
+    pdf_document           : pdf doc with toc
+    word_document          : docx document
+    beamer_presentation    : pdf beamer presentation
+    ioslides_presentation  : html5 presentation
+    flex_dashboard         : flex dashboard
+    shower_presentation    : rmdshower presentation
+' -> doc
+
+
+options(warn=-1, verbose=FALSE)
+
+suppressMessages(library(rmarkdown))
+suppressMessages(library(flexdashboard))
+suppressMessages(library(docopt))
+opts = docopt(doc)
+
+# str(opts)
+
+if (opts$format %in% c('flex_dashboard', 'shower_presentation')) {
+    render(opts$INFILE)
+} else {
+    render(opts$INFILE, output_format=opts$format)
+}

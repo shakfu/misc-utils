@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+
+import argparse
+import glob
+import os
+import subprocess
+
+ENDINGS = [
+	'.app',
+	'.bundle',
+	'.component',
+	'.vst',
+	'.vst3',
+]
+
+CWD = os.getcwd()
+
+
+def cmd(shellcmd, *args, **kwds):
+    os.system(shellcmd.format(*args, **kwds))
+
+
+def get_cmd_output(shellcmd):
+    args = shellcmd.split()
+    return subprocess.check_output(args, encoding="utf8").strip()
+
+
+def shrink(target):
+    native_arch = get_cmd_output("uname -m")
+    print(f"shrinking to {native_arch}: {target}")
+    cmd(f'ditto --arch {native_arch} "{target}" "{target}__tmp"')
+    cmd(f'rm -rf "{target}"')
+    cmd(f'mv "{target}__tmp" "{target}"')
+
+
+def shrink_all():
+	for name in os.listdir(CWD):
+		if any(name.endswith(ending) for ending in ENDINGS):
+			target = os.path.join(CWD, name)
+			shrink(target)
+	print("DONE")
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='shrink universal bundles to native.')
+	parser.add_argument('--target', '-t', help='target folder or bundle to shrink')
+	args = parser.parse_args()
+	if args.target:
+		shrink(args.target)
+	else:
+		shrink_all()
+	
