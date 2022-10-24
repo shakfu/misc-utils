@@ -20,6 +20,7 @@ To use it, place the script in your path and call it something like 'clean':
                 clean .svn .pyc
                 clean -p /tmp/folder .svn .csv .bzr .pyc
                 clean -g "*.pyc"
+                clean -g "*/._*"
                 clean -ng "*.py"
 
             converts line endings from windows to unix:
@@ -207,6 +208,7 @@ class Cleaner(object):
             %prog .svn .pyc
             %prog -p /tmp/folder .svn .csv .bzr .pyc
             %prog -g "*.pyc"
+            %prog -g "*/._*"
             %prog -gn "*.py"
 
         converts line endings from windows to unix:
