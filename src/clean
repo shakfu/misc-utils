@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 This script recursively scans a given path and applies a cleaning 'action'
 to matching files and folders. By default files and folders matching the
@@ -35,7 +35,7 @@ To use it, place the script in your path and call it something like 'clean':
       -v, --verbose
 
 """
-from __future__ import print_function
+
 import os, sys, shutil
 from fnmatch import fnmatch
 from optparse import OptionParser
@@ -44,9 +44,9 @@ from os.path import join, isdir, isfile
 
 # to enable single-character confirmation of choices
 try:
-    import sys, tty, termios
+    import tty, termios
     def getch(txt):
-        print(txt, end=' ')
+        print(txt, end=' ', flush=True)
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
@@ -231,6 +231,11 @@ class Cleaner(object):
                           action="store_true", dest="glob",
                           help="clean with glob patterns")
 
+        parser.add_option("-a", "--all",
+                          action="store_true", dest="all",
+                          help="clean all detritus")
+
+
         parser.add_option("-v", "--verbose",
                           action="store_true", dest="verbose")
 
@@ -242,6 +247,11 @@ class Cleaner(object):
             patterns = ['.pyc', '.DS_Store', '__pycache__']
             cleaner = cls(options.path, patterns)
             cleaner.do('endswith_delete')
+            if options.all:
+                patterns = ["*/._*"]
+                cleaner = cls(options.path, patterns)
+                cleaner.do('glob_delete')
+            sys.exit()
 
         if not options.path:
             options.path = '.'
