@@ -1,46 +1,54 @@
+#!/usr/bin env python3
+
 import subprocess
 import sys
 
 SKIP = [
-    '------------------',
-    'Cython',
-    'Package',
-    'pip',
-    'setuptools',
-    'wheel',
+    # '------------------',
+    "Cython",
+    "Package",
+    "pip",
+    "setuptools",
+    "wheel",
 ]
 
+
 def print_dot():
-    sys.stdout.write('.')
+    sys.stdout.write(".")
     sys.stdout.flush()
 
-def get_output(cmds):
-    return subprocess.check_output(
-        cmds.split(), encoding='utf8', stderr=subprocess.DEVNULL)
 
-def get_names():
-    lines = get_output('pip list')
-    lines = lines.splitlines()
+def get_output(cmds) -> str:
+    return subprocess.check_output(
+        cmds.split(), encoding="utf8", stderr=subprocess.DEVNULL
+    )
+
+
+def get_names() -> list[str]:
+    pkgs = get_output("pip list")
+    lines = pkgs.splitlines()
     names = [line.split()[0].strip() for line in lines]
     _names = []
     for name in names:
-        if name in SKIP or name.startswith('-----'):
+        if name in SKIP or name.startswith("-----"):
             continue
         _names.append(name)
     return _names
 
-def get_required_by(name) -> list[str]:
+
+def get_required_by(name: str) -> list[str] | None:
     deps = None
     try:
-        lines = get_output(f'pip show {name}')
-        lines = lines.splitlines()
+        info = get_output(f"pip show {name}")
+        lines = info.splitlines()
         for line in lines:
-            if line.startswith('Required-by: '):
-                _line = line.replace('Required-by: ', '')
-                deps = _line.split() 
+            if line.startswith("Required-by: "):
+                _line = line.replace("Required-by: ", "")
+                deps = _line.split()
     except subprocess.CalledProcessError as e:
         pass
     return deps
+
 
 def main():
     required_by = set()
@@ -67,9 +75,9 @@ def main():
             continue
         singles.add(pkg)
 
-    print('singles: ', singles)
-    print("can by uninstalled by: 'pip uninstall -y {}'".format(' '.join(singles)))
+    print("singles: ", singles)
+    print("can by uninstalled by: 'pip uninstall -y {}'".format(" ".join(singles)))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
-
