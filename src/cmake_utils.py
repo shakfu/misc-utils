@@ -27,7 +27,7 @@ class DepBuilder:
     BUILD = ROOT / 'build'
     DEPS = BUILD / 'deps'
 
-    def __init__(self, name, url, branch=None, options=None, common_install=False):
+    def __init__(self, name, url, branch=None, options=None, common_install=True):
         self.name = name
         self.url = url
         self.branch = branch
@@ -52,12 +52,12 @@ class DepBuilder:
 
         cmake_opts = " ".join(f"-D{k}={v}" for k,v in self.options.items())
         self.DEPS.mkdir(parents=True, exist_ok=True)
-        src_dir = self.DEPS / f"{self.name}-src"
-        build_dir = self.DEPS / f"{self.name}-build"
+        src_dir = self.DEPS / 'src' / self.name
+        build_dir = self.DEPS / 'build' / self.name
         if self.common_install:
             install_dir = self.DEPS
         else:
-            install_dir = self.DEPS / f"{self.name}-install"
+            install_dir = self.DEPS / 'install' / self.name
         if src_dir.exists():
             for folder in [build_dir, install_dir]:
                 if folder.exists():
