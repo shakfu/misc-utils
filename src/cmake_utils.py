@@ -4,15 +4,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# global config
 
-# example of targets
-# for t in targets: DepBuilder(**t).build()
-TARGETS = [
-    dict(
+class DepBuilder:
+    """Front-end to build cmake depedencies in the `build` directory
+
+    Can be used as follows:
+
+    DepBuilder(
         name='libsndfile',
         url='https://github.com/libsndfile/libsndfile.git',
-        branch=None,
         options=dict(
             ENABLE_EXTERNAL_LIBS=True,
             ENABLE_MPEG=False,
@@ -20,17 +20,9 @@ TARGETS = [
             BUILD_TESTING=False,
             BUILD_SHARED_LIBS=False,
         ),
-    ),
-    dict(
-        name='libsamplerate',
-        url='https://github.com/erikd/libsamplerate.git',
-        branch=None,
-        options={},
-    ),
-]
+    ).build()
 
-
-class DepBuilder:
+    """
     ROOT = Path.cwd()
     BUILD = ROOT / 'build'
     DEPS = BUILD / 'deps'
