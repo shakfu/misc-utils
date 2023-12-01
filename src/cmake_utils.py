@@ -27,12 +27,14 @@ class DepBuilder:
     BUILD = ROOT / 'build'
     DEPS = BUILD / 'deps'
 
-    def __init__(self, name, url, branch=None, options=None, common_install=True):
+    def __init__(self, name, url, branch=None, recursive_clone=False, 
+                common_install=True, options=None):
         self.name = name
         self.url = url
-        self.branch = branch
-        self.options = options or {}
+        self.branch = branch or ""
+        self.recursive_clone = recursive_clone
         self.common_install = common_install
+        self.options = options or {}
 
     def cmd(self, shellcmd, cwd='.'):
         if isinstance(shellcmd, str):
@@ -48,6 +50,8 @@ class DepBuilder:
         print("name:", self.name)
         print("url:", self.url)
         print("branch:", self.branch)
+        print("recursive_clone:", self.recursive_clone)
+        print("common_install:", self.common_install)
         print("options:", self.options)
 
         cmake_opts = " ".join(f"-D{k}={v}" for k,v in self.options.items())
@@ -59,20 +63,20 @@ class DepBuilder:
         else:
             install_dir = self.DEPS / 'install' / self.name
         if src_dir.exists():
-            for folder in [build_dir, install_dir]:
-                if folder.exists():
-                    shutil.rmtree(folder)
+            if build_dir.exists():
+                shutil.rmtree(build_dir)
+            if install_dir.exists() and not self.common_install:
+                shutil.rmtree(folder)
         else:
             src_dir.mkdir(parents=True, exist_ok=True)
+            recursive = "--recursive" if self.recursive_clone else ""
             if self.branch:
-                self.cmd(f"git clone --depth=1 --branch {self.branch} {self.url} {src_dir}")
+                self.cmd(f"git clone --depth=1 {recursive} --branch {self.branch} {self.url} {src_dir}")
             else:
-                self.cmd(f"git clone --depth=1 {self.url} {src_dir}")
+                self.cmd(f"git clone --depth=1 {recursive} {self.url} {src_dir}")
 
         # build
         build_dir.mkdir(parents=True, exist_ok=True)
         self.cmd(f"cmake -S {src_dir} -B {build_dir} {cmake_opts}")
         self.cmd(f"cmake --build {build_dir}")
         self.cmd(f"cmake --install {build_dir} --prefix {install_dir}")
-
-
