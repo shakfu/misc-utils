@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-
+import os
+import argparse
 import subprocess
 import sys
 
@@ -49,8 +50,8 @@ def get_required_by(name: str) -> list[str] | None:
         pass
     return deps
 
-
-def main():
+def clean_deps():
+    """Clean up unused dependencies"""
     required_by = set()
     not_required_by = set()
     singles = set()
@@ -77,6 +78,23 @@ def main():
 
     print("singles: ", singles)
     print("can by uninstalled by: 'pip uninstall -y {}'".format(" ".join(singles)))
+
+def reset_pip():
+    """Reset pip to initial state"""
+    os.system("pip list --format=freeze --exclude-editable | xargs pip uninstall -y --break-system-packages")
+    os.system("pip install --upgrade --break-system-packages pip setuptools wheel virtualenv")
+
+def main():
+    parser = argparse.ArgumentParser(description="pip cleanup tools")
+    parser.add_argument("-c", "--clean", action="store_true", help="clean up unused dependencies")
+    parser.add_argument("-r", "--reset", action="store_true", help="reset pip")
+
+    args = parser.parse_args()
+    if args.clean:
+        clean_deps()
+    elif args.reset:
+        reset_pip()
+
 
 
 if __name__ == "__main__":
