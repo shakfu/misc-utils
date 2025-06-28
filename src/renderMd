@@ -13,6 +13,7 @@ formatting options:
     ioslides_presentation  : html5 presentation
     flex_dashboard         : flex dashboard
     shower_presentation    : rmdshower presentation
+    xaringan_presentation  : xaringan presentation
 ' -> doc
 
 
@@ -25,8 +26,14 @@ opts = docopt(doc)
 
 # str(opts)
 
-if (opts$format %in% c('flex_dashboard', 'shower_presentation')) {
+CUSTOM_PRESENTATION_FORMATS = c(
+    'flex_dashboard',
+    'shower_presentation',
+    'xaringan_presentation')
+
+if (opts$format %in% CUSTOM_PRESENTATION_FORMATS) {
     render(opts$INFILE)
 } else {
     render(opts$INFILE, output_format=opts$format)
 }
+

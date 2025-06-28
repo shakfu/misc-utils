@@ -11,6 +11,8 @@ ENDINGS = [
     ".component",
     ".vst",
     ".vst3",
+    ".so",
+    ".a",
 ]
 
 CWD = os.getcwd()
