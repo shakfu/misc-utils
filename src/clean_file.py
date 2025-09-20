@@ -22,6 +22,7 @@ class FileCleaner:
         ".py", ".pyx", ".pxd", ".pxi",
         ".c", ".h", ".cpp", ".hpp",
         ".rs", ".go", "java", ".js", ".ts",
+        ".md", ".qmd",
     }
 
     # Unicode ranges for emoji detection
