@@ -9,6 +9,7 @@ If no files are specified, processes all files in the current directory recursiv
 """
 
 import argparse
+import re
 from pathlib import Path
 from typing import TypeAlias
 
@@ -22,16 +23,29 @@ class FileCleaner:
         ".c", ".h", ".cpp", ".hpp",
         ".rs", ".go", "java", ".js", ".ts",
     }
+
+    # Unicode ranges for emoji detection
+    EMOJI_PATTERN = re.compile(
+        r'[\U0001F600-\U0001F64F]|'  # emoticons
+        r'[\U0001F300-\U0001F5FF]|'  # symbols & pictographs
+        r'[\U0001F680-\U0001F6FF]|'  # transport & map symbols
+        r'[\U0001F1E0-\U0001F1FF]|'  # flags (iOS)
+        r'[\U00002702-\U000027B0]|'  # dingbats
+        r'[\U000024C2-\U0001F251]'   # enclosed characters
+    )
+
     def __init__(self, file_path: PathLike, dry_run: bool= False):
         self.file_path = Path(file_path)
         self.dry_run = dry_run
         self.n_lines_cleaned = 0
+        self.n_emojis_removed = 0
 
     def clean(self):
         """main cleaning method"""
         if self.can_clean():
             print(f"cleaning: {self.file_path}")
             self.remove_trailing_whitespace()
+            self.remove_emojis()
 
     def remove_trailing_whitespace(self) -> bool:
         """Remove trailing whitespace from a file."""
@@ -71,6 +85,38 @@ class FileCleaner:
             print(f"Error processing {self.file_path}: {e}")
             return False
 
+    def remove_emojis(self) -> bool:
+        """Remove emojis from a file while preserving structure."""
+        try:
+            with open(self.file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Count emojis before removal
+            emojis_found = self.EMOJI_PATTERN.findall(content)
+
+            if not emojis_found:
+                return False
+
+            # Remove emojis
+            cleaned_content = self.EMOJI_PATTERN.sub('', content)
+
+            # Track removed emojis
+            self.n_emojis_removed = len(emojis_found)
+
+            prefix = ""
+            if not self.dry_run:
+                with open(self.file_path, 'w', encoding='utf-8') as f:
+                    f.write(cleaned_content)
+            else:
+                prefix = "DRY-RUN-"
+
+            print(f"{prefix}Removed: {self.n_emojis_removed} emojis from {self.file_path}")
+            return True
+
+        except IOError as e:
+            print(f"Error processing {self.file_path}: {e}")
+            return False
+
     def can_clean(self) -> bool:
         """Check if file should be processed (text files only)."""
 
@@ -93,7 +139,7 @@ class FileCleaner:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Remove trailing whitespace from files')
+    parser = argparse.ArgumentParser(description='Remove trailing whitespace and emojis from files')
     parser.add_argument('paths', default=".", nargs='*', help='Files/Dirs to process (default: recursive)')
     parser.add_argument('--dry-run', action='store_true', help='Show what would be changed without modifying files')
 
