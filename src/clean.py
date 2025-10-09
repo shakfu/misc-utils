@@ -38,7 +38,7 @@ To use it, place the script in your path and call it something like 'clean':
 
 import os, sys, shutil
 from fnmatch import fnmatch
-from optparse import OptionParser
+import argparse
 from os.path import join, isdir, isfile
 
 
@@ -67,9 +67,10 @@ except ImportError:
 class Cleaner(object):
     """recursively cleans patterns of files/directories
     """
-    def __init__(self, path, patterns):
+    def __init__(self, path, patterns, dry_run=False):
         self.path = path
         self.patterns = patterns
+        self.dry_run = dry_run
         self.matchers = {
             # a matcher is a boolean function which takes a string and tries
             # to match it against any one of the specified patterns,
@@ -100,18 +101,25 @@ class Cleaner(object):
                 question = "\n%s '%s' (y/n/q)? " % (desc, target)
                 answer = getch(question)
                 if answer in ['y', 'Y']:
-                    func(target)
+                    if self.dry_run:
+                        self.log("Would %s '%s'" % (desc, target))
+                    else:
+                        func(target)
                     i += 1
                 elif answer in ['q']: #i.e. quit
                     break
                 else:
                     continue
             else:
-                func(target)
+                if self.dry_run:
+                    self.log("Would %s '%s'" % (desc, target))
+                else:
+                    func(target)
                 i += 1
         if i:
-            self.log("Applied '%s' to %s items (%sK)" % (
-                desc, i, int(round(self.cum_size/1024.0, 0))))
+            action_word = "Would apply" if self.dry_run else "Applied"
+            self.log("%s '%s' to %s items (%sK)" % (
+                action_word, desc, i, int(round(self.cum_size/1024.0, 0))))
         else:
             self.log('No action taken')
 
@@ -194,88 +202,78 @@ class Cleaner(object):
     def clean_endings(self, path):
         """convert windows endings to unix endings
         """
-        with file(path) as old:
+        with open(path) as old:
             lines = old.readlines()
         string = "".join(l.rstrip()+'\n' for l in lines)
-        with file(path, 'w') as new:
+        with open(path, 'w') as new:
             new.write(string)
 
     @classmethod
     def cmdline(cls):
-        usage = """usage: %prog [options] patterns
+        parser = argparse.ArgumentParser(
+            description='Recursively cleans patterns of files/directories',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+Examples:
+  Delete files/folder patterns:
+    clean .svn .pyc
+    clean -p /tmp/folder .svn .csv .bzr .pyc
+    clean -g "*.pyc"
+    clean -g "*/._*"
+    clean -gn "*.py"
 
-        deletes files/folder patterns:
-            %prog .svn .pyc
-            %prog -p /tmp/folder .svn .csv .bzr .pyc
-            %prog -g "*.pyc"
-            %prog -g "*/._*"
-            %prog -gn "*.py"
+  Convert line endings from windows to unix:
+    clean -e .py
+    clean -e -p /tmp/folder .py
 
-        converts line endings from windows to unix:
-            %prog -e .py
-            %prog -e -p /tmp/folder .py"""
+  Dry run mode (show what would be deleted without deleting):
+    clean --dry-run .pyc .pyo
+    clean -d -g "*.pyc"
+        """)
 
-        parser = OptionParser(usage)
-        parser.add_option("-p", "--path",
-                          dest="path", help="set path")
+        arg = opt = parser.add_argument
+        arg('patterns', nargs='*', help='Patterns to match (e.g., .pyc .pyo)')
+        opt('-p', '--path', default='.', help='Set path to search (default: current directory)')
+        opt('-n', '--negated', action='store_true', help='Clean everything except specified patterns')
+        opt('-e', '--endings', action='store_true', help='Clean line endings (convert windows to unix)')
+        opt('-g', '--glob', action='store_true', help='Use glob patterns instead of endswith matching')
+        opt('-a', '--all', action='store_true', help='Clean all detritus (default patterns)')
+        opt('-d', '--dry-run', action='store_true', help='Show what would be cleaned without actually doing it')
+        opt('-v', '--verbose', action='store_true', help='Verbose output')
 
-        parser.add_option("-n", "--negated",
-                         action="store_true", dest="negated",
-                         help="clean everything except specified patterns")
+        args = parser.parse_args()
 
-        parser.add_option("-e", "--endings",
-                          action="store_true", dest="endings",
-                          help="clean line endings")
-
-        parser.add_option("-g", "--glob",
-                          action="store_true", dest="glob",
-                          help="clean with glob patterns")
-
-        parser.add_option("-a", "--all",
-                          action="store_true", dest="all",
-                          help="clean all detritus")
-
-
-        parser.add_option("-v", "--verbose",
-                          action="store_true", dest="verbose")
-
-        (options, patterns) = parser.parse_args()
-
-        if len(patterns) == 0:
-            #parser.error("incorrect number of arguments")
-            options.path = '.'
-            patterns = ['.pyc', '.DS_Store', '__pycache__']
-            cleaner = cls(options.path, patterns)
+        # Default patterns when none specified
+        if len(args.patterns) == 0:
+            args.patterns = ['.pyc', '.DS_Store', '__pycache__']
+            cleaner = cls(args.path, args.patterns, dry_run=args.dry_run)
             cleaner.do('endswith_delete')
-            if options.all:
-                patterns = ["*/._*"]
-                cleaner = cls(options.path, patterns)
+            if args.all:
+                args.patterns = ["*/._*"]
+                cleaner = cls(args.path, args.patterns, dry_run=args.dry_run)
                 cleaner.do('glob_delete')
             sys.exit()
 
-        if not options.path:
-            options.path = '.'
+        if args.verbose:
+            print('Options:', args)
+            print('Finding patterns: %s in %s' % (args.patterns, args.path))
 
-        if options.verbose:
-            print('options:', options)
-            print('finding patterns: %s in %s' % (patterns, options.path))
-
-        cleaner = cls(options.path, patterns)
+        cleaner = cls(args.path, args.patterns, dry_run=args.dry_run)
 
         # convert line endings from windows to unix
-        if options.endings and options.negated:
+        if args.endings and args.negated:
             cleaner.do('convert', negate=True)
-        elif options.endings:
-            cleaner.do('convert', negate=True)
+        elif args.endings:
+            cleaner.do('convert', negate=False)
 
         # glob delete
-        elif options.negated and options.glob:
+        elif args.negated and args.glob:
             cleaner.do('glob_delete', negate=True)
-        elif options.glob:
+        elif args.glob:
             cleaner.do('glob_delete')
 
         # endswith delete (default)
-        elif options.negated:
+        elif args.negated:
             cleaner.do('endswith_delete', negate=True)
         else:
             cleaner.do('endswith_delete')

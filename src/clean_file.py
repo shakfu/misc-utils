@@ -36,7 +36,7 @@ class FileCleaner:
         ".hpp",
         ".rs",
         ".go",
-        "java",
+        ".java",
         ".js",
         ".ts",
         ".md",
@@ -57,6 +57,7 @@ class FileCleaner:
         self, file_path: PathLike, remove_emojis: bool = False, dry_run: bool = False
     ):
         self.file_path = Path(file_path)
+        self.remove_emojis_flag = remove_emojis
         self.dry_run = dry_run
         self.n_lines_cleaned = 0
         self.n_emojis_removed = 0
@@ -66,7 +67,8 @@ class FileCleaner:
         if self.can_clean():
             print(f"cleaning: {self.file_path}")
             self.remove_trailing_whitespace()
-            self.remove_emojis()
+            if self.remove_emojis_flag:
+                self.remove_emojis()
 
     def remove_trailing_whitespace(self) -> None:
         """Remove trailing whitespace from a file."""
@@ -189,8 +191,9 @@ def main():
             if p.exists():
                 if p.is_file():
                     files_to_process.append(p)
-                if p.is_dir():
-                    for f in p.iterdir():
+                elif p.is_dir():
+                    # Recursively find all files
+                    for f in p.rglob('*'):
                         if f.is_file():
                             files_to_process.append(f)
             else:

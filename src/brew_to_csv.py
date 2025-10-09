@@ -1,25 +1,10 @@
 #!/usr/bin/env python3
+"""Export brew packages to CSV - wrapper around brew_tools.py
 
-import csv
-import json
-import os
+This is a convenience script. For full functionality, use brew_tools.py directly.
+"""
 
-os.system("brew info --json --installed > brew.json")
-with open('brew.json') as f:
-    pkgs = json.load(f)
+from brew_tools import dump_to_csv
 
-with open('names.csv', 'w', newline='') as csvfile:
-    fieldnames = ['name', 'version','desc']
-    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-    writer.writeheader()
-
-    for p in pkgs:
-        # print("name:", p['name'])
-        # print("desc:", p['desc'])
-        # print("version:", p['versions']['stable'])
-        # print()            
-        writer.writerow({
-            'name': p['name'],
-            'version': p['versions']['stable'],
-            'desc': p['desc'],
-        })
+if __name__ == '__main__':
+    dump_to_csv('names.csv')

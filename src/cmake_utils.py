@@ -39,7 +39,16 @@ class DepBuilder:
     def cmd(self, shellcmd, cwd='.'):
         if isinstance(shellcmd, str):
             shellcmd = shellcmd.split()
-        return subprocess.check_call(shellcmd, cwd=cwd)
+        try:
+            return subprocess.check_call(shellcmd, cwd=cwd)
+        except subprocess.CalledProcessError as e:
+            print(f"Error running command: {' '.join(shellcmd)}")
+            print(f"Exit code: {e.returncode}")
+            raise
+        except FileNotFoundError as e:
+            print(f"Command not found: {shellcmd[0]}")
+            print("Please ensure required tools are installed (git, cmake)")
+            raise
 
     def cmds(self, shellcmds, cwd='.'):
         assert isinstance(shellcmds, list), "shellcmds must a list"
@@ -66,7 +75,7 @@ class DepBuilder:
             if build_dir.exists():
                 shutil.rmtree(build_dir)
             if install_dir.exists() and not self.common_install:
-                shutil.rmtree(folder)
+                shutil.rmtree(install_dir)
         else:
             src_dir.mkdir(parents=True, exist_ok=True)
             recursive = "--recursive" if self.recursive_clone else ""
