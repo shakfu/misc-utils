@@ -95,6 +95,32 @@ class TestGetNames:
             names = get_names('pip list')
             assert names == []
 
+    def test_get_names_include_all_includes_skip_packages(self):
+        """Test that include_all=True includes SKIP packages."""
+        mock_output = "pip==21.0\nCython==0.29.24\npackaging==21.0\ntest-package==1.0"
+
+        with patch('pip_tools.get_output') as mock_get:
+            mock_get.return_value = mock_output
+            names = get_names('pip list', include_all=True)
+
+            # SKIP packages should now be included
+            assert any('pip' in n for n in names)
+            assert any('Cython' in n for n in names)
+            assert any('packaging' in n for n in names)
+            assert any('test-package' in n for n in names)
+
+    def test_get_names_include_all_still_filters_separators(self):
+        """Test that include_all=True still filters separator lines."""
+        mock_output = "--------- ----\npip==21.0\npackage1==1.0"
+
+        with patch('pip_tools.get_output') as mock_get:
+            mock_get.return_value = mock_output
+            names = get_names('pip list', include_all=True)
+
+            assert not any('---' in n for n in names)
+            assert any('pip' in n for n in names)
+            assert any('package1' in n for n in names)
+
 
 class TestGetRequiredBy:
     """Test get_required_by function."""
@@ -229,6 +255,22 @@ class TestResetPip:
         reset_pip()
 
         assert mock_run.call_count == 2
+
+    @patch('pip_tools.get_names')
+    @patch('subprocess.run')
+    def test_reset_pip_include_all_passes_flag(self, mock_run, mock_get_names):
+        """Test that reset_pip passes include_all to get_names."""
+        from pip_tools import reset_pip
+
+        mock_get_names.return_value = ['pip', 'setuptools', 'package1']
+
+        reset_pip(include_all=True)
+
+        # Verify get_names was called with include_all=True
+        mock_get_names.assert_called_once_with(
+            "pip list --format=freeze --exclude-editable",
+            include_all=True
+        )
 
 
 class TestResetPip2Deprecation:

@@ -72,14 +72,15 @@ def get_output(cmd: str) -> str:
     )
 
 
-def get_names(cmd: str) -> list[str]:
+def get_names(cmd: str, include_all: bool = False) -> list[str]:
     """Get package names from pip command output.
 
     Args:
         cmd: pip command to execute
+        include_all: If True, include packages from SKIP list
 
     Returns:
-        List of package names (excluding SKIP list)
+        List of package names (excluding SKIP list unless include_all=True)
     """
     pkgs = get_output(cmd)
     lines = pkgs.splitlines()
@@ -89,7 +90,9 @@ def get_names(cmd: str) -> list[str]:
     for name in names:
         if "==" in name:
             shortname = name.split("==")[0]
-        if name in SKIP or shortname in SKIP or name.startswith("-----"):
+        if name.startswith("-----"):
+            continue
+        if not include_all and (name in SKIP or shortname in SKIP):
             continue
         _names.append(name)
     return _names
@@ -158,12 +161,15 @@ def clean_deps():
         print("No unused packages found.")
 
 
-def reset_pip():
+def reset_pip(include_all: bool = False):
     """Reset pip to initial state.
 
-    Uninstalls all packages except those in SKIP list.
+    Args:
+        include_all: If True, uninstall ALL packages including SKIP list.
+
+    Uninstalls all packages except those in SKIP list (unless include_all=True).
     """
-    names = get_names("pip list --format=freeze --exclude-editable")
+    names = get_names("pip list --format=freeze --exclude-editable", include_all=include_all)
 
     if not names:
         print("No packages to uninstall (only SKIP list packages remain).")
@@ -266,6 +272,11 @@ Examples:
             help="Uninstall all packages except SKIP list"
         )
         parser.add_argument(
+            "-a", "--all",
+            action="store_true",
+            help="Include SKIP list packages (use with --reset to uninstall everything)"
+        )
+        parser.add_argument(
             "--show-skip",
             action="store_true",
             help="Show extended SKIP list and reinstall instructions"
@@ -276,13 +287,18 @@ Examples:
         if args.clean:
             clean_deps()
         elif args.reset:
-            print("WARNING: This will uninstall all pip packages except:", file=sys.stderr)
-            for pkg in SKIP:
-                print(f"  - {pkg}", file=sys.stderr)
+            if args.all:
+                print("WARNING: This will uninstall ALL pip packages including:", file=sys.stderr)
+                for pkg in SKIP:
+                    print(f"  - {pkg}", file=sys.stderr)
+            else:
+                print("WARNING: This will uninstall all pip packages except:", file=sys.stderr)
+                for pkg in SKIP:
+                    print(f"  - {pkg}", file=sys.stderr)
             print(file=sys.stderr)
             response = input("Continue? [y/N]: ")
             if response.lower() in ['y', 'yes']:
-                reset_pip()
+                reset_pip(include_all=args.all)
             else:
                 print("Cancelled.")
         elif args.show_skip:
