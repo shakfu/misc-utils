@@ -1,0 +1,9 @@
+[project]
+name = "misc-utils"
+version = "0.1.0"
+description = "some utilities"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "webloc>=2020.12.3",
+]
