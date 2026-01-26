@@ -9,6 +9,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ANSI color codes
+BOLD_CYAN = "\033[1;36m"
+RESET = "\033[0m"
+
 
 def is_git_repo(path: Path) -> bool:
     """Check if a directory is a git repository."""
@@ -80,7 +84,7 @@ def get_git_status(repo_path: Path) -> dict:
 
 def format_status(status: dict) -> str:
     """Format status dict into readable output."""
-    lines = [f"\n{status['path']}"]
+    lines = [f"\n{BOLD_CYAN}{status['path']}{RESET}"]
 
     if status["staged"]:
         lines.append(f"  Staged ({len(status['staged'])}):")
@@ -144,7 +148,7 @@ def main():
 
     for status in dirty_repos:
         if args.quiet:
-            print(status["path"].name)
+            print(f"{BOLD_CYAN}{status['path'].name}{RESET}")
         else:
             print(format_status(status))
 
