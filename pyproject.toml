@@ -7,3 +7,11 @@ requires-python = ">=3.13"
 dependencies = [
     "webloc>=2020.12.3",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src/py"]
