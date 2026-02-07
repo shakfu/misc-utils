@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-import webloc
+import plistlib
 
 
 class LinksDB:
@@ -54,7 +54,8 @@ class LinksDB:
         with sqlite3.connect(self.db_path) as conn:
             for webloc_file in webloc_files:
                 try:
-                    url = webloc.read(str(webloc_file))
+                    with open(webloc_file, 'rb') as wf:
+                        url = plistlib.load(wf).get("URL")
                     name = webloc_file.stem
 
                     # Check if entry already exists

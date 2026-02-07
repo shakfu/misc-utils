@@ -19,6 +19,7 @@ Useful utilities and scripts
 - `rm_deadlinks.py` - Delete broken symbolic links
 - `webloc_to_md.py` - Convert macOS .webloc files to markdown links
 - `dump-links.py` - Extract and dump links from .webloc files to HTML
+- `store_links.py` - Recursively scan .webloc files and store in SQLite database
 
 ## Build and Development Tools
 - `cmake_utils.py` - CMake dependency builder utilities

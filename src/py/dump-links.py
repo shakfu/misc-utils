@@ -1,7 +1,7 @@
 #!/usr/bin/env python3 
 
 import os
-import webloc
+import plistlib
 
 tmpl = """\
 <html>
@@ -20,7 +20,8 @@ def dump(path: str):
     _links = []
     for i in os.listdir(path):
         p = os.path.join(path, i)
-        url = webloc.read(p)
+        with open(p, 'rb') as f:
+            url = plistlib.load(f).get("URL")
         txt = i[:-7]
         _link = f'<li><a href="{url}">{txt}</a></li>\n'
         _links.append(_link)
