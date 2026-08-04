@@ -1,6 +1,6 @@
 """Tests for the `shrink` universal-binary thinner.
 
-Run with `make test` from /Users/sa/bin, or `pytest tests/`.
+Run with `make test`, or `uv run pytest`.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-BIN = Path(__file__).resolve().parent.parent
-SHRINK_PATH = BIN / "shrink"
+ROOT = Path(__file__).resolve().parent.parent
+SHRINK_PATH = ROOT / "src" / "py" / "shrink.py"
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="shrink is macOS-only")
 

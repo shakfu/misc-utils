@@ -29,4 +29,6 @@ def gen_md(root, title="Research Links"):
 	with open("_RESEARCH.md", "w") as f:
 		f.write("\n".join(md))
 
-gen_md(".")
+
+if __name__ == "__main__":
+	gen_md(".")
