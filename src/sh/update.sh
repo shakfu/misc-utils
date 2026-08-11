@@ -70,10 +70,10 @@ function update_src
 }
 
 
-function update_src
+function update_dir
 {
-    info "updating src"
-    cd "$HOME/src" || return 1
+    info "updating $1"
+    cd "$1" || return 1
     
     for project in */; do
         project="${project%/}"
@@ -82,11 +82,17 @@ function update_src
             cd "$project" || continue
             git pull
             echo
-            cd "$HOME/src" || return 1
+            cd "$1" || return 1
         fi
     done
 }
 
+{
+function update_uv_tools
+{
+    info "updating uv tools"
+    uv tool upgrade --all
+}
 
 function main {
     section "updating components"
@@ -94,7 +100,9 @@ function main {
     update_bun && \
     update_deno && \
     update_rustup && \
-    update_src && \
+    update_dir "$HOME/projects/personal" && \
+    update_dir "$HOME/src"  && \
+    update_uv_tools && \
     finished
 }
 
