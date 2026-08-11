@@ -15,6 +15,7 @@ Useful utilities and scripts
 - `rpkg.py` - R package install/update/remove helper
 
 ## File and System Utilities
+- `dedupe.py` - Plan and reclaim disk space with APFS clones and thinned binaries (macOS)
 - `clean.py` - Recursively clean files and detritus by extension or glob pattern
 - `clean_file.py` - Remove trailing whitespace and emojis from files
 - `rm_deadlinks.py` - Delete broken symbolic links
