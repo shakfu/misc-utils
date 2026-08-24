@@ -4,7 +4,7 @@
 
 import argparse
 import logging
-import os
+import subprocess
 
 REPO='https://cran.rstudio.com'
 
@@ -21,25 +21,21 @@ def main():
 
 
     def scmd(shellcmd, *args, **kwds):
-        """utility function to call shell commands.
-        """
+        """Run a shell command via subprocess, logging it first."""
         shellcmd = shellcmd.format(*args, **kwds)
         log.info(shellcmd)
-        os.system(shellcmd)
+        subprocess.run(shellcmd, shell=True, check=False)
 
     def rcmd(cmd, *args, **kwds):
-        """utility function to call r functions
-        """
+        """Build and run an Rscript -e invocation."""
         r_cmd = cmd.format(*args, **kwds)
         shell_cmd = f'Rscript -e "{r_cmd}"'
         scmd(shell_cmd)
 
     def srcmd(cmd, *args, **kwds):
-        """utility function to call r functions
-        """
+        """Build and run an Rscript -e invocation."""
         r_cmd = cmd.format(*args, **kwds)
         shell_cmd = f'Rscript -e "{r_cmd}"'
-        #print(shell_cmd)
         scmd(shell_cmd)
 
     parser = argparse.ArgumentParser()

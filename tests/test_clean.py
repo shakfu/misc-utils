@@ -3,16 +3,10 @@
 """Tests for clean script"""
 
 import pytest
-import sys
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch, call
 
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-# Import the Cleaner class from clean script
 import clean
 from clean import Cleaner
 

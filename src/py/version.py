@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Version management script for buylog.
+Version management script.
 
 Checks version consistency across:
-- src/buylog/__init__.py (__version__)
 - pyproject.toml (version)
 - CHANGELOG.md (first non-Unreleased version header)
+
+Optionally also checks a Python package __init__.py when INIT_FILE is
+set to a real path (e.g. by tests or when reusing this script in another
+project).
 
 Usage:
     python version.py              # Check and display current version
@@ -22,11 +25,28 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# File paths relative to script location
-SCRIPT_DIR = Path(__file__).parent
-INIT_FILE = SCRIPT_DIR / "src" / "buylog" / "__init__.py"
-PYPROJECT_FILE = SCRIPT_DIR / "pyproject.toml"
-CHANGELOG_FILE = SCRIPT_DIR / "CHANGELOG.md"
+
+def _find_repo_root(start: Path) -> Path:
+    """Walk upward from *start* to find the directory that contains pyproject.toml."""
+    for parent in [start, *start.parents]:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    # Fall back to the script's own directory if no pyproject.toml is found.
+    return start
+
+
+# File paths: resolved relative to the repository root so the script works
+# correctly regardless of the working directory it is invoked from.
+SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _find_repo_root(SCRIPT_DIR)
+
+# INIT_FILE is intentionally set to a non-existent sentinel so that
+# get_init_version() returns None gracefully when there is no package
+# __init__.py in this repository.  Override this constant (e.g. in tests or
+# when adapting this script to another project) to enable that check.
+INIT_FILE = _REPO_ROOT / "src" / "__init__.py"
+PYPROJECT_FILE = _REPO_ROOT / "pyproject.toml"
+CHANGELOG_FILE = _REPO_ROOT / "CHANGELOG.md"
 
 # Regex patterns
 INIT_VERSION_PATTERN = re.compile(r'^__version__\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
@@ -35,7 +55,9 @@ CHANGELOG_VERSION_PATTERN = re.compile(r'^## \[(\d+\.\d+\.\d+)\]', re.MULTILINE)
 
 
 def get_init_version() -> Optional[str]:
-    """Extract version from __init__.py."""
+    """Extract version from __init__.py, or return None if the file does not exist."""
+    if not INIT_FILE.exists():
+        return None
     content = INIT_FILE.read_text()
     match = INIT_VERSION_PATTERN.search(content)
     return match.group(1) if match else None
@@ -56,7 +78,7 @@ def get_changelog_version() -> Optional[str]:
 
 
 def check_consistency() -> tuple[bool, dict[str, Optional[str]]]:
-    """Check if all versions are consistent."""
+    """Check if all available versions are consistent."""
     versions = {
         "init": get_init_version(),
         "pyproject": get_pyproject_version(),
@@ -131,7 +153,7 @@ def run_git_command(args: list[str], check: bool = True) -> subprocess.Completed
     """Run a git command."""
     return subprocess.run(
         ["git"] + args,
-        cwd=SCRIPT_DIR,
+        cwd=_REPO_ROOT,
         capture_output=True,
         text=True,
         check=check,
@@ -185,7 +207,8 @@ def main() -> int:
     consistent, versions = check_consistency()
 
     print("Version Status:")
-    print(f"  __init__.py:   {versions['init'] or 'NOT FOUND'}")
+    if versions["init"] is not None:
+        print(f"  __init__.py:    {versions['init']}")
     print(f"  pyproject.toml: {versions['pyproject'] or 'NOT FOUND'}")
     print(f"  CHANGELOG.md:   {versions['changelog'] or 'NOT FOUND'}")
     print()
@@ -194,7 +217,8 @@ def main() -> int:
         print("ERROR: Versions are inconsistent!")
         return 1
 
-    current_version = versions["init"]
+    # Prefer pyproject.toml as the canonical source; fall back to init if present.
+    current_version = versions["pyproject"] or versions["init"]
     if not current_version:
         print("ERROR: Could not determine current version")
         return 1
@@ -226,13 +250,15 @@ def main() -> int:
             print("Aborted")
             return 0
 
-        update_init_version(new_version)
+        if INIT_FILE.exists():
+            update_init_version(new_version)
         update_pyproject_version(new_version)
         update_changelog_version(current_version, new_version)
 
         print()
         print("Updated files:")
-        print(f"  - {INIT_FILE}")
+        if INIT_FILE.exists():
+            print(f"  - {INIT_FILE}")
         print(f"  - {PYPROJECT_FILE}")
         print(f"  - {CHANGELOG_FILE}")
         print()

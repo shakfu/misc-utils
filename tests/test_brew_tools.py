@@ -3,14 +3,9 @@
 """Tests for brew_tools.py"""
 
 import pytest
-import sys
-import os
 import json
 from unittest.mock import Mock, patch, call, mock_open
 from pathlib import Path
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from brew_tools import (
     shell_output,

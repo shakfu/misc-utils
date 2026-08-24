@@ -4,12 +4,7 @@
 
 import pytest
 import subprocess
-import sys
-import os
 from unittest.mock import Mock, patch, call
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from pip_tools import (
     get_output,

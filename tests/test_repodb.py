@@ -3,15 +3,10 @@
 """Tests for repodb.py"""
 
 import pytest
-import sys
-import os
 import tempfile
 import dbm
 from pathlib import Path
 from unittest.mock import Mock, patch, call
-
-# Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from repodb import GitRepoDB, list_repos
 

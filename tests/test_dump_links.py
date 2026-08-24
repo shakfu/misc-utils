@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
 
-"""Tests for dump-links.py"""
+"""Tests for dump_links.py"""
 
-import importlib.util
 import os
 import plistlib
-import sys
 import tempfile
 from pathlib import Path
 
-
-def _load_dump_links():
-    path = Path(__file__).resolve().parent.parent / "src" / "py" / "dump-links.py"
-    spec = importlib.util.spec_from_file_location("dump_links", path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["dump_links"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-dump_links = _load_dump_links()
+import dump_links
 
 
 def _write_webloc(path: Path, url: str) -> None:

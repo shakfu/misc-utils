@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 COLOR_BOLD_YELLOW="\033[1;33m"
 COLOR_BOLD_BLUE="\033[1;34m"
@@ -87,7 +87,6 @@ function update_dir
     done
 }
 
-{
 function update_uv_tools
 {
     info "updating uv tools"
