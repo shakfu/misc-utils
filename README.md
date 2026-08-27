@@ -21,6 +21,7 @@ Useful utilities and scripts
 - `rm_deadlinks.py` - Delete broken symbolic links
 - `case_converter.py` - Rename identifiers between case styles
 - `treesed.py` - Recursive find-and-replace across a directory tree
+- `wordsub.py` - Scan markdown for a predefined word dictionary and optionally substitute
 - `wav_renamer.py` - Batch-rename WAV files
 - `webloc_to_md.py` - Convert macOS `.webloc` files to markdown links
 - `dump-links.py` - Extract `.webloc` links to an HTML page
