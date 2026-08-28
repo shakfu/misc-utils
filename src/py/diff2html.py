@@ -39,18 +39,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Sequence
 
 
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-def run(cmd):
+def run(cmd: Sequence[str]) -> tuple[int, str, str]:
     """Run a command, returning (returncode, stdout, stderr)."""
     proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def git_show(ref, path):
+def git_show(ref: str, path: str) -> str:
     """Return the contents of PATH at git revision REF."""
     code, out, err = run(["git", "show", f"{ref}:{path}"])
     if code != 0:
@@ -58,10 +59,11 @@ def git_show(ref, path):
     return out
 
 
-def clean_text(text, pattern):
+def clean_text(text: str, pattern: str) -> str:
     """Drop lines matching PATTERN and squeeze consecutive blanks (cat -s)."""
     rx = re.compile(pattern)
-    out, blank = [], False
+    out: list[str] = []
+    blank = False
     for ln in text.splitlines():
         if rx.match(ln):
             continue
@@ -75,7 +77,7 @@ def clean_text(text, pattern):
     return "\n".join(out) + "\n"
 
 
-def classify(line):
+def classify(line: str) -> str:
     """Map a unified-diff line to a CSS class name."""
     if line.startswith(("+++", "---")):
         return "filehdr"
@@ -97,9 +99,9 @@ def classify(line):
 # --------------------------------------------------------------------------- #
 # git method
 # --------------------------------------------------------------------------- #
-def _relabel(diff, old_label, new_label):
+def _relabel(diff: str, old_label: str, new_label: str) -> str:
     """Rewrite the header lines of a --no-index diff to friendly labels."""
-    res = []
+    res: list[str] = []
     for ln in diff.splitlines():
         if ln.startswith("--- "):
             res.append(f"--- {old_label}")
@@ -112,7 +114,9 @@ def _relabel(diff, old_label, new_label):
     return "\n".join(res) + ("\n" if res else "")
 
 
-def git_no_index(a_text, b_text, old_label, new_label, context):
+def git_no_index(
+    a_text: str, b_text: str, old_label: str, new_label: str, context: int
+) -> str:
     """Diff two in-memory blobs via `git diff --no-index`, with friendly labels."""
     with tempfile.TemporaryDirectory() as d:
         pa, pb = os.path.join(d, "a"), os.path.join(d, "b")
@@ -126,7 +130,7 @@ def git_no_index(a_text, b_text, old_label, new_label, context):
     return _relabel(out, old_label, new_label)
 
 
-def make_git_diff(args):
+def make_git_diff(args: argparse.Namespace) -> str:
     """Return the unified-diff text for the requested inputs (git method)."""
     if args.file_a or args.file_b:
         if not (args.file_a and args.file_b):
@@ -197,9 +201,11 @@ h1 { font-size: 1.1rem; }
 """
 
 
-def unified_diff_to_html(diff_text, title, wrap=False):
+def unified_diff_to_html(
+    diff_text: str, title: str, wrap: bool = False
+) -> str:
     """Wrap a unified-diff string in a self-contained, colored HTML document."""
-    spans = []
+    spans: list[str] = []
     for raw in diff_text.splitlines():
         escaped = html.escape(raw) or "&nbsp;"
         spans.append(f'<span class="line {classify(raw)}">{escaped}</span>')
@@ -225,7 +231,7 @@ def unified_diff_to_html(diff_text, title, wrap=False):
 # --------------------------------------------------------------------------- #
 # difflib method
 # --------------------------------------------------------------------------- #
-def _resolve_pair(args):
+def _resolve_pair(args: argparse.Namespace) -> tuple[str, str, str, str]:
     """Return (a_text, b_text, old_label, new_label) for the side-by-side view."""
     if args.file_a or args.file_b:
         if not (args.file_a and args.file_b):
@@ -274,7 +280,7 @@ table.diff colgroup:nth-of-type(2), table.diff colgroup:nth-of-type(5) { width: 
 """
 
 
-def _inject_wrap_css(doc):
+def _inject_wrap_css(doc: str) -> str:
     """Insert the word-wrap CSS override into a difflib HTML document."""
     block = f'<style type="text/css">{_DIFFLIB_WRAP_CSS}</style>'
     if "</head>" in doc:
@@ -282,7 +288,7 @@ def _inject_wrap_css(doc):
     return block + doc
 
 
-def make_difflib_html(args):
+def make_difflib_html(args: argparse.Namespace) -> str:
     """Render a side-by-side HTML diff using difflib.HtmlDiff (word-wrapped)."""
     a, b, old_label, new_label = _resolve_pair(args)
     if args.clean:
@@ -305,7 +311,7 @@ def make_difflib_html(args):
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="diff2html.py",
         description=__doc__,
@@ -370,7 +376,7 @@ def build_parser():
     return p
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.method == "git":
         diff = make_git_diff(args)

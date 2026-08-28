@@ -149,7 +149,9 @@ def update_changelog_version(old_version: str, new_version: str) -> None:
     CHANGELOG_FILE.write_text(new_content)
 
 
-def run_git_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+def run_git_command(
+    args: list[str], check: bool = True
+) -> subprocess.CompletedProcess[str]:
     """Run a git command."""
     return subprocess.run(
         ["git"] + args,

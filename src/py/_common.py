@@ -76,7 +76,8 @@ def read_webloc_url(path: Path) -> str | None:
     """Return the URL stored in a ``.webloc`` plist file, or ``None`` on failure."""
     try:
         with path.open("rb") as f:
-            return plistlib.load(f).get("URL")
+            url = plistlib.load(f).get("URL")
+        return url if isinstance(url, str) else None
     except Exception:
         return None
 

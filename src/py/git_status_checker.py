@@ -8,10 +8,21 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 # ANSI color codes
 BOLD_CYAN = "\033[1;36m"
 RESET = "\033[0m"
+
+
+class RepoStatus(TypedDict):
+    """One repository's working-tree state."""
+
+    path: Path
+    staged: list[str]
+    modified: list[str]
+    untracked: list[str]
+    has_changes: bool
 
 
 def is_git_repo(path: Path) -> bool:
@@ -19,7 +30,7 @@ def is_git_repo(path: Path) -> bool:
     return (path / ".git").exists()
 
 
-def get_git_status(repo_path: Path) -> dict:
+def get_git_status(repo_path: Path) -> RepoStatus | None:
     """
     Get git status for a repository.
     Returns dict with status info or None if not a git repo.
@@ -27,7 +38,7 @@ def get_git_status(repo_path: Path) -> dict:
     if not is_git_repo(repo_path):
         return None
 
-    result = {
+    result: RepoStatus = {
         "path": repo_path,
         "staged": [],
         "modified": [],
@@ -82,7 +93,7 @@ def get_git_status(repo_path: Path) -> dict:
     return result
 
 
-def format_status(status: dict) -> str:
+def format_status(status: RepoStatus) -> str:
     """Format status dict into readable output."""
     lines = [f"\n{BOLD_CYAN}{status['path']}{RESET}"]
 
@@ -110,7 +121,7 @@ def format_status(status: dict) -> str:
     return "\n".join(lines)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Check git status of project folders in a directory"
     )
@@ -130,7 +141,7 @@ def main():
         print(f"Error: {args.directory} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    dirty_repos = []
+    dirty_repos: list[RepoStatus] = []
 
     for entry in sorted(args.directory.iterdir()):
         if not entry.is_dir():

@@ -9,7 +9,7 @@ import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Any, Optional
 
 
 def shell_output(cmd: str) -> list[str]:
@@ -57,7 +57,7 @@ def get_pkg_info(name: str) -> Optional[SimpleNamespace]:
 
 def get_all_pkg_info() -> dict[str, str]:
     """Get description for all installed packages."""
-    info_dict = {}
+    info_dict: dict[str, str] = {}
     for pkg_name in get_pkg_names():
         desc = get_pkg_desc(pkg_name)
         if desc:
@@ -65,9 +65,9 @@ def get_all_pkg_info() -> dict[str, str]:
     return info_dict
 
 
-def get_detailed_pkgs() -> dict[str, dict]:
+def get_detailed_pkgs() -> dict[str, dict[str, Any]]:
     """Get detailed info (desc, deps, build_deps) for all packages."""
-    pkg_dict = {}
+    pkg_dict: dict[str, dict[str, Any]] = {}
     for name in get_pkg_names():
         pkg_info = get_pkg_info(name)
         if pkg_info:
@@ -79,14 +79,15 @@ def get_detailed_pkgs() -> dict[str, dict]:
     return pkg_dict
 
 
-def get_installed_json() -> list[dict]:
+def get_installed_json() -> list[dict[str, Any]]:
     """Get full JSON info for all installed packages."""
     try:
         result = subprocess.check_output(
             ['brew', 'info', '--json', '--installed'],
             encoding='utf8'
         )
-        return json.loads(result)
+        packages: list[dict[str, Any]] = json.loads(result)
+        return packages
     except subprocess.CalledProcessError as e:
         print(f"Error getting installed packages: {e}")
         return []

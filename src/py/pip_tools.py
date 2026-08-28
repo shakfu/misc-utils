@@ -52,7 +52,7 @@ SKIP_EXTENDED = [
 ]
 
 
-def print_dot():
+def print_dot() -> None:
     """Print a dot for progress indication."""
     sys.stdout.write(".")
     sys.stdout.flush()
@@ -122,7 +122,7 @@ def get_required_by(name: str) -> list[str] | None:
     return deps
 
 
-def clean_deps():
+def clean_deps() -> None:
     """Clean up unused dependencies.
 
     Finds packages that are not required by any other package
@@ -161,7 +161,7 @@ def clean_deps():
         print("No unused packages found.")
 
 
-def reset_pip(include_all: bool = False):
+def reset_pip(include_all: bool = False) -> None:
     """Reset pip to initial state.
 
     Args:
@@ -193,7 +193,7 @@ def reset_pip(include_all: bool = False):
     print(f"\nUninstallation complete. {len(names)} packages processed.")
 
 
-def show_skip_list():
+def show_skip_list() -> None:
     """Show the extended SKIP list and reinstall instructions."""
     print("Recommended packages to keep (Extended SKIP list):")
     print()
@@ -213,13 +213,13 @@ def show_skip_list():
     print("  pip_tools --show-skip     # Show this help")
 
 
-def reset_pip2():
+def reset_pip2() -> None:
     """Reset pip to initial state (alternative method - deprecated)."""
     print("Warning: reset_pip2() is deprecated. Use reset_pip() instead.", file=sys.stderr)
     reset_pip()
 
 
-def show_info_mode():
+def show_info_mode() -> None:
     """Info mode when invoked as pip_reset (backward compatibility)."""
     print("=" * 60)
     print("pip_reset - Package Reset Helper")

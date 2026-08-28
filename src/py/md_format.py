@@ -35,6 +35,7 @@ import re
 import sys
 import textwrap
 from pathlib import Path
+from typing import Callable, Collection, Sequence
 
 DEFAULT_EXCLUDE = {".git", ".build", "build", "node_modules", ".venv", "venv"}
 
@@ -93,16 +94,16 @@ class Unit:
 
     __slots__ = ('prefix', 'cont_indent', 'parts')
 
-    def __init__(self, prefix, cont_indent, first):
+    def __init__(self, prefix: str, cont_indent: str, first: str) -> None:
         self.prefix = prefix
         self.cont_indent = cont_indent
-        self.parts = [first]
+        self.parts: list[str] = [first]
 
-    def text(self):
+    def text(self) -> str:
         return ' '.join(p.strip() for p in self.parts if p.strip())
 
 
-def _render(unit, mode, width):
+def _render(unit: Unit, mode: str, width: int) -> list[str]:
     text = unit.text()
     if mode == 'unwrap':
         return [unit.prefix + text]
@@ -120,12 +121,12 @@ def _render(unit, mode, width):
 def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
     """Reflow a document string and return the transformed string."""
     had_trailing_nl = text.endswith('\n')
-    out = []
-    unit = None
+    out: list[str] = []
+    unit: Unit | None = None
     in_fence = False
-    fence_marker = None
+    fence_marker: str | None = None
 
-    def flush():
+    def flush() -> None:
         nonlocal unit
         if unit is not None:
             out.extend(_render(unit, mode, width))
@@ -138,7 +139,10 @@ def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
         m = FENCE_RE.match(line)
         if in_fence:
             out.append(line)
-            if m and m.group(1)[0] == fence_marker[0] and len(m.group(1)) >= len(fence_marker):
+            closing = m.group(1) if m else None
+            if (closing and fence_marker
+                    and closing[0] == fence_marker[0]
+                    and len(closing) >= len(fence_marker)):
                 in_fence, fence_marker = False, None
             continue
         if m:
@@ -191,7 +195,13 @@ def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
 # Shared CLI plumbing
 # --------------------------------------------------------------------------- #
 
-def gather_files(parser, paths, recursive, glob, exclude):
+def gather_files(
+    parser: argparse.ArgumentParser,
+    paths: Sequence[str],
+    recursive: bool,
+    glob: str,
+    exclude: Collection[str],
+) -> list[Path]:
     """Expand PATH arguments into a sorted list of files to process.
 
     Directory PATHs are only allowed with --recursive, in which case they are
@@ -217,7 +227,11 @@ def gather_files(parser, paths, recursive, glob, exclude):
     return files
 
 
-def run(parser, args, transform) -> int:
+def run(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    transform: Callable[[str], str],
+) -> int:
     """Drive `transform` (str -> str) over stdin or the resolved file list."""
     if args.in_place and not args.paths:
         parser.error("--in-place requires a PATH (cannot rewrite stdin)")
@@ -312,7 +326,7 @@ SUBCOMMANDS = ("space", "reflow", "all")
 DEFAULT_COMMAND = "all"
 
 
-def inject_default_command(argv):
+def inject_default_command(argv: Sequence[str]) -> Sequence[str]:
     """Prepend DEFAULT_COMMAND unless argv already names a subcommand.
 
     Lets `md_format.py notes.md` mean `md_format.py all notes.md` while keeping
@@ -380,7 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv=None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv and not sys.stdin.isatty():

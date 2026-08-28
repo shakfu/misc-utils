@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 
 class DepBuilder:
@@ -27,16 +28,23 @@ class DepBuilder:
     BUILD = ROOT / 'build'
     DEPS = BUILD / 'deps'
 
-    def __init__(self, name, url, branch=None, recursive_clone=False, 
-                common_install=True, options=None):
+    def __init__(
+        self,
+        name: str,
+        url: str,
+        branch: str | None = None,
+        recursive_clone: bool = False,
+        common_install: bool = True,
+        options: Mapping[str, Any] | None = None,
+    ):
         self.name = name
         self.url = url
         self.branch = branch or ""
         self.recursive_clone = recursive_clone
         self.common_install = common_install
-        self.options = options or {}
+        self.options = dict(options or {})
 
-    def cmd(self, shellcmd, cwd='.'):
+    def cmd(self, shellcmd: str | Sequence[str], cwd: str = '.') -> int:
         if isinstance(shellcmd, str):
             shellcmd = shellcmd.split()
         try:
@@ -50,12 +58,12 @@ class DepBuilder:
             print("Please ensure required tools are installed (git, cmake)")
             raise
 
-    def cmds(self, shellcmds, cwd='.'):
+    def cmds(self, shellcmds: Sequence[str | Sequence[str]], cwd: str = '.') -> None:
         assert isinstance(shellcmds, list), "shellcmds must a list"
         for shellcmd in shellcmds:
             self.cmd(shellcmd, cwd=cwd)
 
-    def build(self):
+    def build(self) -> None:
         print("name:", self.name)
         print("url:", self.url)
         print("branch:", self.branch)

@@ -83,7 +83,7 @@ class TreeSed:
         self.case_sensitive = case_sensitive
         self.use_regex = use_regex
 
-    def compile_pattern(self, pattern: str) -> re.Pattern:
+    def compile_pattern(self, pattern: str) -> re.Pattern[str]:
         """Compile a search pattern into a regular expression.
 
         If use_regex is False, the pattern is escaped for literal matching.
@@ -94,7 +94,7 @@ class TreeSed:
         return re.compile(pattern, flags)
 
     def search_file(
-        self, pattern: re.Pattern, path: Path
+        self, pattern: re.Pattern[str], path: Path
     ) -> FileMatches | None:
         """Search a single file for pattern matches.
 
@@ -141,7 +141,7 @@ class TreeSed:
 
     def replace_file(
         self,
-        pattern: re.Pattern,
+        pattern: re.Pattern[str],
         replacement: str,
         path: Path,
         backup: bool = True,

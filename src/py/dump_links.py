@@ -16,8 +16,8 @@ tmpl = """\
 """
 
 
-def dump(path: str):
-    _links = []
+def dump(path: str) -> None:
+    _links: list[str] = []
     for i in os.listdir(path):
         p = os.path.join(path, i)
         with open(p, 'rb') as f:

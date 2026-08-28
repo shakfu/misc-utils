@@ -40,12 +40,13 @@ import os, sys, shutil
 from fnmatch import fnmatch
 import argparse
 from os.path import join, isdir, isfile
+from typing import Any, Callable, Iterable, Sequence
 
 
 # to enable single-character confirmation of choices
 try:
     import tty, termios
-    def getch(txt):
+    def getch(txt: str) -> str:
         print(txt, end=' ', flush=True)
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
@@ -57,9 +58,11 @@ try:
         return ch
 except ImportError:
     import msvcrt
-    def getch(txt):
+    def getch(txt: str) -> str:
         print(txt, end=' ')
-        return msvcrt.getch()
+        # msvcrt is typed for Windows only, which is where this branch runs.
+        read_key = getattr(msvcrt, 'getch')
+        return str(read_key().decode())
 
 # -----------------------------------------------------
 # main class
@@ -67,35 +70,39 @@ except ImportError:
 class Cleaner(object):
     """recursively cleans patterns of files/directories
     """
-    def __init__(self, path, patterns, dry_run=False):
+    def __init__(
+        self, path: str, patterns: Sequence[str], dry_run: bool = False
+    ) -> None:
         self.path = path
         self.patterns = patterns
         self.dry_run = dry_run
-        self.matchers = {
+        self.matchers: dict[str, Callable[[str], bool]] = {
             # a matcher is a boolean function which takes a string and tries
             # to match it against any one of the specified patterns,
             # returning False otherwise
             'endswith': lambda s: any(s.endswith(p) for p in patterns),
             'glob': lambda s: any(fnmatch(s, p) for p in patterns),
         }
-        self.actions = {
+        self.actions: dict[str, tuple[Callable[[str], None], str]] = {
             # action: (path_operating_func, matcher)
             'endswith_delete': (self.delete, 'endswith'),
             'glob_delete': (self.delete, 'glob'),
             'convert': (self.clean_endings, 'endswith'),
         }
-        self.targets = []
+        self.targets: list[str] = []
         self.cum_size = 0.0
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<Cleaner: path:%s , patterns:%s>" % (
             self.path, self.patterns)
 
-    def _apply(self, func, confirm=False):
+    def _apply(
+        self, func: Callable[[str], None], confirm: bool = False
+    ) -> None:
         """applies a function to each target path
         """
         i = 0
-        desc = func.__doc__.strip()
+        desc = (func.__doc__ or '').strip()
         for target in self.targets:
             if confirm:
                 question = "\n%s '%s' (y/n/q)? " % (desc, target)
@@ -124,7 +131,9 @@ class Cleaner(object):
             self.log('No action taken')
 
     @staticmethod
-    def _onerror(func, path, exc_info):
+    def _onerror(
+        func: Callable[..., Any], path: str, exc_info: Any
+    ) -> None:
         """ Error handler for shutil.rmtree.
 
             If the error is due to an access error (read only file)
@@ -146,13 +155,14 @@ class Cleaner(object):
         else:
             raise
 
-    def log(self, txt):
+    def log(self, txt: str) -> None:
         print('\n' + txt)
 
-    def do(self, action, negate=False):
+    def do(self, action: str, negate: bool = False) -> None:
         """finds pattern and approves action on results
         """
         func, matcher = self.actions[action]
+        show: Callable[[str], str | None]
         if not negate:
             show = lambda p: p if self.matchers[matcher](p) else None
         else:
@@ -161,7 +171,7 @@ class Cleaner(object):
         results = self.walk(self.path, show)
         if results:
             question = "%s item(s) found. Apply '%s' to all (y/n/c)? " % (
-                len(results), func.__doc__.strip())
+                len(results), (func.__doc__ or '').strip())
             answer = getch(question)
             self.targets = results
             if answer in ['y','Y']:
@@ -173,11 +183,16 @@ class Cleaner(object):
         else:
             self.log("No results.")
 
-    def walk(self, path, func, log=True):
+    def walk(
+        self,
+        path: str,
+        func: Callable[[str], str | None],
+        log: bool = True,
+    ) -> list[str]:
         """walk path recursively collecting results of function application
         """
-        results = []
-        def visit(root, target, prefix):
+        results: list[str] = []
+        def visit(root: str, target: Iterable[str], prefix: str) -> None:
             for i in target:
                 item = join(root, i)
                 obj = func(item)
@@ -191,7 +206,7 @@ class Cleaner(object):
             visit(root, files,' |-->')
         return results
 
-    def delete(self, path):
+    def delete(self, path: str) -> None:
         """delete path
         """
         if isfile(path):
@@ -199,7 +214,7 @@ class Cleaner(object):
         if isdir(path):
             shutil.rmtree(path, onerror=self._onerror)
 
-    def clean_endings(self, path):
+    def clean_endings(self, path: str) -> None:
         """convert windows endings to unix endings
         """
         with open(path) as old:
@@ -209,7 +224,7 @@ class Cleaner(object):
             new.write(string)
 
     @classmethod
-    def cmdline(cls):
+    def cmdline(cls) -> None:
         parser = argparse.ArgumentParser(
             description='Recursively cleans patterns of files/directories',
             formatter_class=argparse.RawDescriptionHelpFormatter,

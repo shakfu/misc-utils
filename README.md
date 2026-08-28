@@ -19,6 +19,7 @@ Useful utilities and scripts
 - `clean.py` - Recursively clean files and detritus by extension or glob pattern
 - `clean_file.py` - Remove trailing whitespace and emojis from files
 - `rm_deadlinks.py` - Delete broken symbolic links
+- `mkdesktop.py` - Create, list and remove freedesktop `.desktop` launchers (Linux)
 - `case_converter.py` - Rename identifiers between case styles
 - `treesed.py` - Recursive find-and-replace across a directory tree
 - `wordsub.py` - Scan markdown for a predefined word dictionary and optionally substitute

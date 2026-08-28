@@ -5,10 +5,11 @@
 import argparse
 import logging
 import subprocess
+from typing import Any
 
 REPO='https://cran.rstudio.com'
 
-def main():
+def main() -> None:
     """Main commandline entry point to application."""
 
     logging.basicConfig(
@@ -20,19 +21,19 @@ def main():
     log = logging.getLogger('rpkg')
 
 
-    def scmd(shellcmd, *args, **kwds):
+    def scmd(shellcmd: str, *args: Any, **kwds: Any) -> None:
         """Run a shell command via subprocess, logging it first."""
         shellcmd = shellcmd.format(*args, **kwds)
         log.info(shellcmd)
         subprocess.run(shellcmd, shell=True, check=False)
 
-    def rcmd(cmd, *args, **kwds):
+    def rcmd(cmd: str, *args: Any, **kwds: Any) -> None:
         """Build and run an Rscript -e invocation."""
         r_cmd = cmd.format(*args, **kwds)
         shell_cmd = f'Rscript -e "{r_cmd}"'
         scmd(shell_cmd)
 
-    def srcmd(cmd, *args, **kwds):
+    def srcmd(cmd: str, *args: Any, **kwds: Any) -> None:
         """Build and run an Rscript -e invocation."""
         r_cmd = cmd.format(*args, **kwds)
         shell_cmd = f'Rscript -e "{r_cmd}"'

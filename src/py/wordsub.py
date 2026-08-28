@@ -129,8 +129,12 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 # would flag identifiers and URLs that happen to contain a term.
 DEFAULT_SUFFIXES: frozenset[str] = frozenset({".md"})
 
+class _Unset:
+    """Sentinel type, so the default is narrowable rather than a bare object."""
+
+
 # Distinguishes "caller said nothing" from "caller said scan everything".
-_UNSET: object = object()
+_UNSET = _Unset()
 
 
 def normalize_suffix(suffix: str) -> str:
@@ -394,7 +398,7 @@ class WordSub:
         exact_fix: bool = False,
         include_hidden: bool = False,
         excludes: Iterable[str] | None = None,
-        suffixes: Iterable[str] | None | object = _UNSET,
+        suffixes: Iterable[str] | None | _Unset = _UNSET,
         max_bytes: int = MAX_FILE_BYTES,
     ):
         self.substitutions = dict(
@@ -420,14 +424,12 @@ class WordSub:
         self.excludes = frozenset(
             DEFAULT_EXCLUDES if excludes is None else excludes
         )
-        if suffixes is _UNSET:
+        if isinstance(suffixes, _Unset):
             self.suffixes: frozenset[str] | None = DEFAULT_SUFFIXES
         elif suffixes is None:
             self.suffixes = None
         else:
-            self.suffixes = frozenset(
-                normalize_suffix(x) for x in suffixes  # type: ignore[union-attr]
-            )
+            self.suffixes = frozenset(normalize_suffix(x) for x in suffixes)
         self._compound = frozenset(
             s for s in (self.suffixes or ()) if s.count(".") > 1
         )
@@ -438,7 +440,7 @@ class WordSub:
             for k, v in self.substitutions.items()
         }
 
-    def _compile(self) -> re.Pattern:
+    def _compile(self) -> re.Pattern[str]:
         """Build one alternation over all terms, longest first.
 
         Longest-first ordering makes an overlapping term win over its own
@@ -638,7 +640,7 @@ class WordSub:
         """
         count = 0
 
-        def _sub(m: re.Match) -> str:
+        def _sub(m: re.Match[str]) -> str:
             nonlocal count
             found = m.group(0)
             if not self.is_fixable(found):

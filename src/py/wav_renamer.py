@@ -82,7 +82,7 @@ def rename_wav_files(directory: str, dry_run: bool = False) -> list[tuple[str, s
     return renames
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Rename .wav files using sequential A-Z, 0-9 naming scheme."
     )

@@ -92,7 +92,7 @@ class CaseConverter:
         self.source_pattern = self._get_pattern_for_format(from_format)
         self.convert_func = self._get_converter(from_format, to_format)
 
-    def _get_pattern_for_format(self, format_name: str) -> re.Pattern:
+    def _get_pattern_for_format(self, format_name: str) -> re.Pattern[str]:
         """Get the regex pattern for a specific case format."""
         pattern_map = {
             'camelCase': self.PAT_CAMEL_CASE,
@@ -191,7 +191,7 @@ class CaseConverter:
 
         return False
 
-    def process_file(self, filepath: str | Path):
+    def process_file(self, filepath: str | Path) -> None:
         """Process a file, converting matching strings from one case to another.
 
         Args:
@@ -231,7 +231,7 @@ class CaseConverter:
         except Exception as e:
             print(f"Error processing file '{filepath}': {e}")
 
-    def process_directory(self):
+    def process_directory(self) -> None:
         """Process all files in a directory, converting case formats.
 
         Processes files based on the recursive flag and file extensions.

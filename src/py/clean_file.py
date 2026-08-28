@@ -62,7 +62,7 @@ class FileCleaner:
         self.n_lines_cleaned = 0
         self.n_emojis_removed = 0
 
-    def clean(self):
+    def clean(self) -> None:
         """main cleaning method"""
         if self.can_clean():
             print(f"cleaning: {self.file_path}")
@@ -159,7 +159,7 @@ class FileCleaner:
         return False
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Remove trailing whitespace and emojis from files"
     )

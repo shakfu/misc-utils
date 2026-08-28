@@ -8,8 +8,17 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "mypy>=2.3.1",
     "pytest>=9.0.2",
+    "types-pyyaml>=6.0.12.20260815",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src/py"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src/py"]
+# Vendored upstream code, kept byte-identical so it can be re-synced.
+exclude = ["^src/py/thirdparty/"]

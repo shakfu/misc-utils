@@ -42,11 +42,14 @@ class GitRepoDB:
         """Get all project names from the database."""
         try:
             with dbm.open(str(self.db_path), 'r') as db:
-                return sorted(name.decode() for name in db.keys())
+                return sorted(
+                    name.decode() if isinstance(name, bytes) else name
+                    for name in db.keys()
+                )
         except Exception:
             return []
 
-    def collect(self):
+    def collect(self) -> None:
         """Collect repos from the default source directory."""
         self.store_from_dir(self.src_dir)
 
@@ -123,7 +126,7 @@ class GitRepoDB:
                 print('storing:', url.stem)
                 db[url.stem] = str(url)
 
-    def dump(self, to_path: str = 'urls.txt'):
+    def dump(self, to_path: str = 'urls.txt') -> None:
         """Dump all URLs to a file.
 
         Args:
@@ -133,7 +136,7 @@ class GitRepoDB:
             f.write("\n".join(self.urls))
 
 
-def list_repos():
+def list_repos() -> None:
     """List all repositories (listrepos compatibility mode)."""
     db = GitRepoDB()
 

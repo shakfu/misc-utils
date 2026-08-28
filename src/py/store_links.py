@@ -21,7 +21,7 @@ class LinksDB:
         self.db_path = Path(db_path) if db_path else Path.cwd() / 'links.db'
         self._init_db()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Initialize the database table if it doesn't exist."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
@@ -103,7 +103,7 @@ class LinksDB:
             return cursor.fetchall()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Recursively scan directory for .webloc files and store in SQLite database"
     )

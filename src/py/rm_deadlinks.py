@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 
-def delete_dead_symlinks(directory: str):
+def delete_dead_symlinks(directory: str) -> None:
     """Deletes dead (broken) symbolic links within a specified directory."""
     for root, _, files in os.walk(directory):
         for name in files:

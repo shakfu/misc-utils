@@ -54,6 +54,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
@@ -337,8 +338,15 @@ def find_universal(entries: list[Entry], roots: list[Path]) -> list[FatFile]:
 # Plan
 # ---------------------------------------------------------------------------
 
+# One entry of the plan, and the plan itself. Both are plain JSON documents,
+# so their values are heterogeneous by construction.
+Item = dict[str, Any]
+Plan = dict[str, Any]
 
-def build_items(groups: list[DupGroup], fat: list[FatFile], arch: str) -> list[dict]:
+
+def build_items(
+    groups: list[DupGroup], fat: list[FatFile], arch: str
+) -> list[Item]:
     """One list of everything worth doing, biggest recovery first.
 
     A file can appear in both halves of the plan - two copies of the same fat
@@ -348,7 +356,7 @@ def build_items(groups: list[DupGroup], fat: list[FatFile], arch: str) -> list[d
     """
     thinned_size = {str(b.path): b.native_bytes(arch) for b in fat if b.native_bytes(arch)}
 
-    items: list[dict] = []
+    items: list[Item] = []
     for group in groups:
         # A member that carries hard links can never be a destination, so it is
         # promoted to be the source instead of being skipped later.
@@ -359,8 +367,8 @@ def build_items(groups: list[DupGroup], fat: list[FatFile], arch: str) -> list[d
             members = [lead] + [p for p in members if p != lead]
         keep, *replace = members
         after_thinning = [thinned_size.get(str(p)) for p in group.members]
-        size = (min(after_thinning) if all(s is not None for s in after_thinning)
-                else group.size)
+        thinned = [s for s in after_thinning if s is not None]
+        size = min(thinned) if len(thinned) == len(after_thinning) else group.size
         items.append({
             "kind": DUPLICATE,
             "size_bytes": group.size,
@@ -389,7 +397,7 @@ def build_items(groups: list[DupGroup], fat: list[FatFile], arch: str) -> list[d
 
 
 def build_plan(roots: list[Path], arch: str, entries: list[Entry],
-               items: list[dict], min_size: int) -> dict:
+               items: list[Item], min_size: int) -> Plan:
     duplicate_bytes = sum(i["reclaimable_bytes"] for i in items if i["kind"] == DUPLICATE)
     binary_bytes = sum(i["reclaimable_bytes"] for i in items if i["kind"] == UNIVERSAL)
     return {
@@ -408,7 +416,7 @@ def build_plan(roots: list[Path], arch: str, entries: list[Entry],
     }
 
 
-def write_plan(plan: dict, destination: Path) -> None:
+def write_plan(plan: Plan, destination: Path) -> None:
     if str(destination) == "-":
         json.dump(plan, sys.stdout, indent=2)
         sys.stdout.write("\n")
@@ -416,7 +424,7 @@ def write_plan(plan: dict, destination: Path) -> None:
     destination.write_text(json.dumps(plan, indent=2) + "\n")
 
 
-def load_plan(source: Path) -> dict:
+def load_plan(source: Path) -> Plan:
     text = sys.stdin.read() if str(source) == "-" else source.read_text()
     plan = json.loads(text)
     if not isinstance(plan, dict) or "items" not in plan:
@@ -490,8 +498,11 @@ def copy_metadata(source_stat: os.stat_result, destination: Path) -> None:
         LOG.debug("%s: cannot restore ownership (%s)", destination, exc)
     flags = getattr(source_stat, "st_flags", 0)
     if flags:
+        # chflags is BSD/macOS only; absent when this runs elsewhere.
+        chflags = getattr(os, "chflags", None)
         try:
-            os.chflags(destination, flags)
+            if chflags is not None:
+                chflags(destination, flags)
         except OSError as exc:
             LOG.debug("%s: cannot restore flags (%s)", destination, exc)
 
@@ -553,7 +564,7 @@ def current_digests(paths: list[Path]) -> dict[Path, str | None]:
     return {path: digest(path) for path in paths}
 
 
-def apply_duplicate(item: dict, dry_run: bool, verify: bool) -> list[Action]:
+def apply_duplicate(item: Item, dry_run: bool, verify: bool) -> list[Action]:
     """Clone one duplicate group, after proving its members are still identical."""
     keep = Path(item["keep"])
     replace = [Path(p) for p in item["replace"]]
@@ -634,7 +645,7 @@ def apply_universal(targets: list[Path], arch: str, dry_run: bool,
     return actions
 
 
-def unique_targets(items: list[dict]) -> list[Path]:
+def unique_targets(items: list[Item]) -> list[Path]:
     """Shrink targets in plan order, each named once."""
     ordered: list[Path] = []
     seen: set[str] = set()
@@ -653,7 +664,7 @@ def unique_targets(items: list[dict]) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
-def report_plan(plan: dict, limit: int) -> None:
+def report_plan(plan: Plan, limit: int) -> None:
     items = plan["items"]
     totals = plan["totals"]
     scanned = plan["scanned"]
@@ -774,7 +785,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def do_scan(args: argparse.Namespace) -> dict:
+def do_scan(args: argparse.Namespace) -> Plan:
     # Absolute, symlink-free roots: a plan outlives the shell that made it, so
     # every path it records has to mean the same thing from any directory.
     roots = [Path(r).expanduser().resolve() for r in (args.roots or ["."])]
@@ -795,7 +806,7 @@ def do_scan(args: argparse.Namespace) -> dict:
     return plan
 
 
-def check_cloning_is_possible(plan: dict, force: bool) -> bool:
+def check_cloning_is_possible(plan: Plan, force: bool) -> bool:
     """Cloning needs APFS; thinning does not, so this is only asked when needed."""
     table = mount_table()
     for root in plan.get("roots", []):
@@ -809,7 +820,7 @@ def check_cloning_is_possible(plan: dict, force: bool) -> bool:
     return True
 
 
-def do_apply(plan: dict, args: argparse.Namespace) -> int:
+def do_apply(plan: Plan, args: argparse.Namespace) -> int:
     items = plan["items"]
     arch = plan.get("arch") or shrink.native_arch()
     started = time.monotonic()

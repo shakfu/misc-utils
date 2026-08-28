@@ -24,6 +24,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, TypeVar
 
 CLAUDE_FILE = "CLAUDE.md"
 CLAUDE_DIR = ".claude"
@@ -107,6 +108,10 @@ class ExistingPolicy:
     ALL = (OVERWRITE, SKIP, BACKUP)
 
 
+# Lets _inspect hand back the same subclass it was asked to build.
+T = TypeVar("T", bound="ArtifactSet")
+
+
 @dataclass(frozen=True)
 class ArtifactSet:
     """A directory, and which Claude artifacts it holds."""
@@ -117,7 +122,7 @@ class ArtifactSet:
 
     @property
     def artifacts(self) -> list[Path]:
-        found = []
+        found: list[Path] = []
         if self.has_file:
             found.append(self.path / CLAUDE_FILE)
         if self.has_dir:
@@ -223,8 +228,8 @@ def find_bundles(archive: Path) -> list[Bundle]:
 
 
 def _inspect(
-    path: Path, kind: type, *, require_artifacts: bool = True
-) -> ArtifactSet | None:
+    path: Path, kind: type[T], *, require_artifacts: bool = True
+) -> T | None:
     file_found = has_claude_file(path)
     dir_found = has_claude_dir(path)
     if require_artifacts and not (file_found or dir_found):
@@ -269,7 +274,9 @@ def _backup(path: Path) -> Path:
     return candidate
 
 
-def _top_level_ignore(root: Path, patterns: tuple[str, ...]):
+def _top_level_ignore(
+    root: Path, patterns: tuple[str, ...]
+) -> Callable[[str, list[str]], set[str]]:
     """Build a ``copytree`` ignore callback that filters only *root*'s entries."""
 
     def ignore(dirpath: str, names: list[str]) -> set[str]:

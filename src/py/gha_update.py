@@ -43,7 +43,10 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence
+
+# A decoded JSON document, as the GitHub and PyPI endpoints return it.
+Json = dict[str, Any] | list[Any]
 
 GITHUB_API = "https://api.github.com"
 PYPI_API = "https://pypi.org/pypi"
@@ -118,7 +121,7 @@ VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)(?:[-_.]?([A-Za-z][\w.+-]*))?$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _package_pin_re(package: str) -> re.Pattern:
+def _package_pin_re(package: str) -> re.Pattern[str]:
     """Match a `package==1.2.3` style requirement pin anywhere in a line."""
     return re.compile(
         r"(?<![\w.-])(?P<name>"
@@ -154,7 +157,7 @@ def is_prerelease(text: str) -> bool:
     return bool(parsed and parsed[1])
 
 
-def version_sort_key(text: str) -> tuple:
+def version_sort_key(text: str) -> tuple[Any, ...]:
     """Sort key ordering versions numerically, with prereleases before releases."""
     parsed = parse_version(text)
     if parsed is None:
@@ -293,7 +296,9 @@ class VersionLookupError(Exception):
     """A version lookup failed."""
 
 
-def http_json(url: str, token: str | None = None, timeout: float = 15.0) -> dict | list:
+def http_json(
+    url: str, token: str | None = None, timeout: float = 15.0
+) -> Json:
     """Fetch and decode a JSON document, raising LookupError_ on failure."""
     request = urllib.request.Request(
         url,
@@ -306,7 +311,8 @@ def http_json(url: str, token: str | None = None, timeout: float = 15.0) -> dict
         request.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.load(response)
+            document: Json = json.load(response)
+        return document
     except urllib.error.HTTPError as exc:
         if exc.code == 403 and "rate limit" in str(exc.headers).lower():
             raise VersionLookupError(f"{url}: rate limited (set GITHUB_TOKEN)") from exc
@@ -327,7 +333,7 @@ class VersionSource:
         self,
         token: str | None = None,
         allow_prerelease: bool = False,
-        fetch: Callable[[str, str | None], dict | list] | None = None,
+        fetch: Callable[[str, str | None], Json] | None = None,
     ) -> None:
         self.token = token
         self.allow_prerelease = allow_prerelease
@@ -336,7 +342,7 @@ class VersionSource:
         self._shas: dict[tuple[str, str], str] = {}
         self._pypi: dict[str, str] = {}
 
-    def _get(self, url: str) -> dict | list:
+    def _get(self, url: str) -> Json:
         return self._fetch(url, self.token)
 
     def latest_tag(self, repo: str) -> str:
@@ -372,11 +378,12 @@ class VersionSource:
         if key in self._shas:
             return self._shas[key]
         data = self._get(f"{GITHUB_API}/repos/{repo}/git/ref/tags/{tag}")
-        obj = data.get("object", {}) if isinstance(data, dict) else {}
-        sha = obj.get("sha", "")
+        obj: dict[str, Any] = data.get("object", {}) if isinstance(data, dict) else {}
+        sha: str = obj.get("sha", "")
         if obj.get("type") == "tag" and sha:
             tag_obj = self._get(f"{GITHUB_API}/repos/{repo}/git/tags/{sha}")
-            sha = tag_obj.get("object", {}).get("sha", sha)
+            if isinstance(tag_obj, dict):
+                sha = tag_obj.get("object", {}).get("sha", sha)
         if not is_sha(sha):
             raise VersionLookupError(f"{repo}: could not resolve {tag} to a commit")
         self._shas[key] = sha
@@ -539,7 +546,9 @@ class Updater:
                 self.result.errors.append(str(exc))
                 continue
 
-            def replace(match: re.Match, latest: str = latest, package: str = package) -> str:
+            def replace(
+                match: re.Match[str], latest: str = latest, package: str = package
+            ) -> str:
                 current = match.group("version")
                 line_no = text.count("\n", 0, match.start()) + 1
                 if match.group("op") == ">=":
