@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
-from typing import NoReturn
+from typing import Any, NoReturn
 
 USER_DIR = os.path.join(
     os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
@@ -136,6 +136,9 @@ DEPRECATED_FIELD_CODES = ("%d", "%D", "%n", "%N", "%v", "%m")
 
 # A launcher action: its identifier, its display name and its Exec value.
 Action = tuple[str, str, str]
+
+# One entry key: the argparse destination behind it, the key, and its value.
+Field = tuple[str | None, str, str | None]
 
 
 def die(msg: str) -> NoReturn:
@@ -412,41 +415,53 @@ def parse_actions(raw: Sequence[str]) -> list[Action]:
     return actions
 
 
+def entry_fields(
+    args: argparse.Namespace,
+    exec_line: str | None,
+    icon: str | None,
+    actions: Sequence[Action] = (),
+) -> list[Field]:
+    """Every [Desktop Entry] key in canonical order.
+
+    The first element of each triple is the argparse destination that feeds
+    the key, or None for the keys this tool always writes itself. --edit uses
+    it to tell an option that was given from one that merely defaulted.
+    """
+    return [
+        (None, "Type", "Application"),
+        (None, "Version", "1.5"),
+        ("name", "Name", args.name),
+        ("generic_name", "GenericName", args.generic_name),
+        ("comment", "Comment", args.comment),
+        ("executable", "Exec", exec_line),
+        ("try_exec", "TryExec", args.try_exec),
+        ("icon", "Icon", icon),
+        ("working_dir", "Path", args.working_dir),
+        ("terminal", "Terminal", "true" if args.terminal else "false"),
+        ("categories", "Categories", normalise_categories(args.categories)),
+        ("action", "Actions",
+         (";".join(a[0] for a in actions) + ";") if actions else None),
+        ("keywords", "Keywords", join_list(args.keywords)),
+        ("mime_type", "MimeType", join_list(args.mime_type)),
+        ("wm_class", "StartupWMClass", args.wm_class),
+        ("no_startup_notify", "StartupNotify",
+         "false" if args.no_startup_notify else "true"),
+        ("no_display", "NoDisplay", "true" if args.no_display else None),
+    ]
+
+
 def build_entry(
     args: argparse.Namespace,
     exec_line: str,
     icon: str | None,
     actions: Sequence[Action] = (),
 ) -> str:
-    entry: list[tuple[str, str | None]] = [
-        ("Type", "Application"),
-        ("Version", "1.5"),
-        ("Name", args.name),
-        ("GenericName", args.generic_name),
-        ("Comment", args.comment),
-        ("Exec", exec_line),
-        ("TryExec", args.try_exec),
-        ("Icon", icon),
-        ("Path", args.working_dir),
-        ("Terminal", "true" if args.terminal else "false"),
-        ("Categories", normalise_categories(args.categories)),
-        ("Actions", (";".join(a[0] for a in actions) + ";") if actions else None),
-        ("Keywords", join_list(args.keywords)),
-        ("MimeType", join_list(args.mime_type)),
-        ("StartupWMClass", args.wm_class),
-        ("StartupNotify", "false" if args.no_startup_notify else "true"),
-        ("NoDisplay", "true" if args.no_display else None),
-    ]
     lines = ["[Desktop Entry]"]
-    for key, value in entry:
+    for _dest, key, value in entry_fields(args, exec_line, icon, actions):
         if value is None:
             continue
         lines.append("%s=%s" % (key, escape_value(value)))
-    for identifier, name, action_exec in actions:
-        lines.append("")
-        lines.append("[Desktop Action %s]" % identifier)
-        lines.append("Name=%s" % escape_value(name))
-        lines.append("Exec=%s" % escape_value(action_exec))
+    lines.extend(render_actions(actions))
     return "\n".join(lines) + "\n"
 
 
@@ -540,6 +555,141 @@ def remove_entry(
     return 0
 
 
+def render_actions(actions: Sequence[Action]) -> list[str]:
+    """The [Desktop Action] groups for *actions*, blank-line separated."""
+    lines: list[str] = []
+    for identifier, name, action_exec in actions:
+        lines.append("")
+        lines.append("[Desktop Action %s]" % identifier)
+        lines.append("Name=%s" % escape_value(name))
+        lines.append("Exec=%s" % escape_value(action_exec))
+    return lines
+
+
+def strip_action_groups(lines: Sequence[str]) -> list[str]:
+    """Drop every [Desktop Action ...] group, keeping any other group."""
+    kept: list[str] = []
+    dropping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            dropping = stripped.startswith("[Desktop Action ")
+        if not dropping:
+            kept.append(line)
+    return kept
+
+
+def apply_edits(
+    lines: list[str],
+    changes: Sequence[tuple[str, str]],
+    unset: Sequence[str],
+    actions: Sequence[Action] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Rewrite the [Desktop Entry] keys named in *changes* and *unset*.
+
+    Everything else in the file - comments, unknown keys, action groups, key
+    order - is left exactly as it was found, since an entry may have been
+    hand-edited and this tool has no business normalising it.
+    """
+    start = None
+    end = len(lines)
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("["):
+            continue
+        if start is None:
+            if stripped == "[Desktop Entry]":
+                start = index
+        else:
+            end = index
+            break
+    if start is None:
+        die("no [Desktop Entry] group found")
+
+    pending = dict(changes)
+    body: list[str] = []
+    replaced: list[str] = []
+    removed: list[str] = []
+    for line in lines[start + 1:end]:
+        stripped = line.strip()
+        key = stripped.split("=", 1)[0].strip() if "=" in stripped else None
+        if key and not stripped.startswith("#"):
+            if key in unset:
+                removed.append(key)
+                continue
+            if key in pending:
+                body.append("%s=%s" % (key, escape_value(pending.pop(key))))
+                replaced.append(key)
+                continue
+        body.append(line)
+
+    # New keys join the end of the group, before any trailing blank line.
+    tail = len(body)
+    while tail > 0 and not body[tail - 1].strip():
+        tail -= 1
+    added = [key for key, _ in changes if key in pending]
+    body[tail:tail] = [
+        "%s=%s" % (key, escape_value(pending[key])) for key in added
+    ]
+
+    tail_lines = lines[end:]
+    if actions is not None:
+        # Actions= and its groups have to agree, so they are rewritten together.
+        tail_lines = [
+            line for line in strip_action_groups(tail_lines) if line.strip()
+        ]
+        tail_lines.extend(render_actions(actions))
+        # render_actions leads with its own separator, so drop the old one.
+        while body and not body[-1].strip():
+            body.pop()
+    return lines[:start + 1] + body + tail_lines, replaced + added, removed
+
+
+def edit_entry(
+    path: str,
+    changes: Sequence[tuple[str, str]],
+    unset: Sequence[str],
+    actions: Sequence[Action] | None,
+    dry_run: bool,
+) -> int:
+    """Apply *changes* to an existing entry in place."""
+    if not changes and not unset:
+        die("--edit needs at least one option to change (or --unset)")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError as exc:
+        die("could not read %s: %s" % (path, exc))
+
+    updated, touched, removed = apply_edits(lines, changes, unset, actions)
+    for key in unset:
+        if key not in removed:
+            warn("%s has no %s to unset" % (os.path.basename(path), key))
+    content = "\n".join(updated) + "\n"
+
+    if dry_run:
+        sys.stdout.write(content)
+        sys.stdout.flush()
+        return 0 if validate_content(content) else 1
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except OSError as exc:
+        die("could not write %s: %s" % (path, exc))
+
+    summary = ["set " + key for key in touched]
+    summary += ["unset " + key for key in removed]
+    print(
+        "updated %s (%s)" % (path, ", ".join(summary)) if summary
+        else "no change to %s" % path
+    )
+    sys.stdout.flush()
+    ok = validate(path)
+    refresh(os.path.dirname(path))
+    return 0 if ok else 1
+
+
 def validate(path: str, label: str | None = None) -> bool:
     """Run desktop-file-validate if it is installed; True when the entry is ok."""
     validator = shutil.which("desktop-file-validate")
@@ -575,8 +725,17 @@ def refresh(directory: str) -> None:
         subprocess.run([updater, directory], capture_output=True)
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+def build_parser(explicit: bool = False) -> argparse.ArgumentParser:
+    """Construct the CLI.
+
+    With *explicit*, an option missing from argv is left out of the parsed
+    namespace altogether. That is how --edit tells "set Terminal to false"
+    apart from "do not touch Terminal", which a default of False cannot.
+    """
+    absent = argparse.SUPPRESS if explicit else None
+    empty: Any = argparse.SUPPRESS if explicit else []
     parser = argparse.ArgumentParser(
+        argument_default=absent,
         prog="mkdesktop.py",
         description="Create a .desktop launcher for an executable.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -589,6 +748,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   mkdesktop.py Term kitty --action "New Window=kitty --single-instance"
   mkdesktop.py Foo /opt/foo/foo --icon foo.png --install-icon
   mkdesktop.py --list
+  mkdesktop.py "VCV Rack 2 Pro" --edit --wm-class GLFW-Application
+  mkdesktop.py "VCV Rack 2 Pro" --edit --unset Path
   mkdesktop.py --remove PlugData
 """,
     )
@@ -616,20 +777,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--categories",
         action="append",
-        default=[],
+        default=empty,
         metavar="CAT[,CAT...]",
         help="menu categories (repeatable), e.g. Audio,Development",
     )
     parser.add_argument(
-        "-k", "--keywords", action="append", default=[], metavar="WORD[,WORD...]",
+        "-k", "--keywords", action="append", default=empty, metavar="WORD[,WORD...]",
         help="search keywords (repeatable)",
     )
     parser.add_argument(
-        "-m", "--mime-type", action="append", default=[], metavar="TYPE[,TYPE...]",
+        "-m", "--mime-type", action="append", default=empty, metavar="TYPE[,TYPE...]",
         help="MIME types this app can open (repeatable)",
     )
     parser.add_argument(
-        "-a", "--action", action="append", default=[], metavar="NAME=COMMAND",
+        "-a", "--action", action="append", default=empty, metavar="NAME=COMMAND",
         help="extra launcher action, shown on right-click (repeatable)",
     )
     parser.add_argument(
@@ -678,7 +839,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "-r", "--remove", metavar="ENTRY",
         help="remove an entry, by filename or by its display name, and exit",
     )
-    return parser.parse_args(argv)
+    mode.add_argument(
+        "-E", "--edit", action="store_true",
+        help="change only the options given, in the entry NAME already names",
+    )
+    parser.add_argument(
+        "--unset", action="append", default=empty, metavar="KEY",
+        help="with --edit, delete a key outright (repeatable), e.g. Path",
+    )
+    return parser
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    args = build_parser().parse_args(argv)
+    # A second pass that suppresses absent options records what was actually
+    # typed, which --edit needs and a default cannot express.
+    args.given = frozenset(vars(build_parser(explicit=True).parse_args(argv)))
+    return args
 
 
 def target_dir(args: argparse.Namespace) -> str:
@@ -701,24 +878,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.remove:
         return remove_entry(directory, args.remove, args.system, args.dry_run)
 
-    if not args.name or not args.executable:
-        die("name and executable are required (or use --list / --remove)")
+    if not args.name:
+        die("name is required (or use --list / --remove)")
     if not args.name.strip():
         die("name must not be empty")
+    if not args.edit and not args.executable:
+        die("an executable is required (pass --edit to change an existing entry)")
 
-    program, extra_args = resolve_executable(args.executable)
-    exec_line = build_exec(program, extra_args)
+    # --edit works on the entry NAME already names, so the file settles first.
+    target = ""
+    if args.edit:
+        matches = find_entry(directory, args.name)
+        if not matches:
+            die("no entry matching %r in %s" % (args.name, directory))
+        if len(matches) > 1:
+            die(
+                "%r matches several entries: %s"
+                % (args.name, ", ".join(os.path.basename(m) for m in matches))
+            )
+        target = matches[0]
+        filename = os.path.basename(target)
+    else:
+        filename = args.filename or slugify(args.name)
+        if not filename.endswith(".desktop"):
+            filename += ".desktop"
+    stem = filename[: -len(".desktop")]
+
+    exec_line: str | None = None
+    if args.executable:
+        program, extra_args = resolve_executable(args.executable)
+        exec_line = build_exec(program, extra_args)
     actions = parse_actions(args.action)
 
     if args.working_dir:
         args.working_dir = os.path.abspath(os.path.expanduser(args.working_dir))
         if not os.path.isdir(args.working_dir):
             die("no such directory: %s" % args.working_dir)
-
-    filename = args.filename or slugify(args.name)
-    if not filename.endswith(".desktop"):
-        filename += ".desktop"
-    stem = filename[: -len(".desktop")]
 
     icon: str | None
     if args.install_icon:
@@ -732,7 +927,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             warn("--icon-size only applies with --install-icon")
         icon = resolve_icon(args.icon)
 
-    content = build_entry(args, exec_line, icon, actions)
+    if args.edit:
+        # "name" located the entry rather than asking for a new Name=.
+        changes = [
+            (key, value)
+            for dest, key, value in entry_fields(args, exec_line, icon, actions)
+            if dest in args.given and dest != "name" and value is not None
+        ]
+        return edit_entry(
+            target,
+            changes,
+            args.unset,
+            actions if "action" in args.given else None,
+            args.dry_run,
+        )
+
+    if args.unset:
+        warn("--unset only applies with --edit")
+
+    content = build_entry(args, exec_line or "", icon, actions)
 
     if args.dry_run:
         sys.stdout.write(content)

@@ -405,7 +405,7 @@ class TestMain:
             main(["   ", "sh"])
 
     def test_missing_executable_argument_is_rejected(self, install_root):
-        with pytest.raises(SystemExit, match="name and executable are required"):
+        with pytest.raises(SystemExit, match="an executable is required"):
             main(["Foo"])
 
     def test_missing_working_dir_is_rejected(self, tmp_path, install_root):
@@ -530,3 +530,140 @@ class TestValidation:
         monkeypatch.setattr(mkdesktop.subprocess, "run", lambda *a, **k: Result())
         assert main(["Foo", "sh", "-n"]) == 1
         assert "boom" in capsys.readouterr().err
+
+
+class TestEdit:
+    def entry(self, apps, name="Foo"):
+        return (apps / ("%s.desktop" % name.lower())).read_text()
+
+    def test_only_the_options_given_are_touched(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--comment", "first", "--categories", "Utility"])
+        assert main(["Foo", "--edit", "--comment", "second"]) == 0
+        content = self.entry(apps)
+        assert "Comment=second" in content
+        assert "Categories=Utility;" in content
+
+    def test_a_default_is_not_a_change(self, install_root):
+        """--terminal defaults to false; not passing it must leave the key be."""
+        apps, _icons = install_root
+        main(["Foo", "sh", "--terminal"])
+        main(["Foo", "--edit", "--comment", "x"])
+        assert "Terminal=true" in self.entry(apps)
+
+    def test_a_flag_that_is_given_does_change(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--terminal"])
+        main(["Foo", "--edit", "--no-display"])
+        assert "NoDisplay=true" in self.entry(apps)
+
+    def test_new_key_joins_the_end_of_the_group(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh"])
+        main(["Foo", "--edit", "--wm-class", "GLFW-Application"])
+        content = self.entry(apps)
+        assert "StartupWMClass=GLFW-Application" in content
+        assert content.index("StartupWMClass") > content.index("Exec=")
+
+    def test_existing_key_keeps_its_position(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--comment", "first"])
+        before = self.entry(apps).splitlines().index("Comment=first")
+        main(["Foo", "--edit", "--comment", "second"])
+        assert self.entry(apps).splitlines().index("Comment=second") == before
+
+    def test_unset_removes_a_key(self, tmp_path, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--working-dir", str(tmp_path)])
+        assert main(["Foo", "--edit", "--unset", "Path"]) == 0
+        assert "Path=" not in self.entry(apps)
+
+    def test_unset_of_an_absent_key_warns(self, capsys, install_root):
+        main(["Foo", "sh"])
+        capsys.readouterr()
+        assert main(["Foo", "--edit", "--unset", "Icon"]) == 0
+        assert "has no Icon to unset" in capsys.readouterr().err
+
+    def test_comments_and_unknown_keys_survive(self, install_root):
+        apps, _icons = install_root
+        path = apps / "foo.desktop"
+        main(["Foo", "sh"])
+        path.write_text(
+            path.read_text().replace(
+                "Terminal=false", "# note\nX-Vendor-Key=yes\nTerminal=false"
+            )
+        )
+        main(["Foo", "--edit", "--comment", "x"])
+        content = path.read_text()
+        assert "# note" in content and "X-Vendor-Key=yes" in content
+
+    def test_executable_updates_exec(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh"])
+        main(["Foo", "--edit", "echo"])
+        assert "Exec=" in self.entry(apps)
+        assert "/sh\n" not in self.entry(apps)
+
+    def test_actions_and_their_groups_stay_in_step(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--action", "One=sh -c true"])
+        main(["Foo", "--edit", "--action", "Two=sh -c false"])
+        content = self.entry(apps)
+        assert "Actions=Two;" in content
+        assert "[Desktop Action Two]" in content
+        assert "[Desktop Action One]" not in content
+        assert "\n\n\n" not in content
+
+    def test_actions_are_left_alone_when_not_given(self, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh", "--action", "One=sh -c true"])
+        main(["Foo", "--edit", "--comment", "x"])
+        assert "[Desktop Action One]" in self.entry(apps)
+
+    def test_edit_finds_the_entry_by_display_name(self, install_root):
+        apps, _icons = install_root
+        main(["Foo App", "sh"])
+        assert main(["Foo App", "--edit", "--comment", "x"]) == 0
+        assert "Comment=x" in (apps / "foo-app.desktop").read_text()
+
+    def test_edit_of_a_missing_entry_is_an_error(self, install_root):
+        with pytest.raises(SystemExit, match="no entry matching"):
+            main(["Nope", "--edit", "--comment", "x"])
+
+    def test_edit_needs_something_to_change(self, install_root):
+        main(["Foo", "sh"])
+        with pytest.raises(SystemExit, match="at least one option"):
+            main(["Foo", "--edit"])
+
+    def test_ambiguous_name_is_refused(self, install_root):
+        main(["Same", "sh", "--filename", "a"])
+        main(["Same", "sh", "--filename", "b"])
+        with pytest.raises(SystemExit, match="matches several entries"):
+            main(["Same", "--edit", "--comment", "x"])
+
+    def test_dry_run_prints_without_writing(self, capsys, install_root):
+        apps, _icons = install_root
+        main(["Foo", "sh"])
+        capsys.readouterr()
+        assert main(["Foo", "--edit", "--comment", "x", "-n"]) == 0
+        assert "Comment=x" in capsys.readouterr().out
+        assert "Comment=x" not in (apps / "foo.desktop").read_text()
+
+    def test_install_icon_reuses_the_existing_filename(self, tmp_path, install_root):
+        apps, icons = install_root
+        main(["Foo App", "sh"])
+        source = write_png(tmp_path / "src.png", 32, 32)
+        main(["Foo App", "--edit", "--icon", str(source), "--install-icon"])
+        assert (icons / "32x32" / "apps" / "foo-app.png").is_file()
+        assert "Icon=foo-app" in (apps / "foo-app.desktop").read_text()
+
+    def test_unset_without_edit_warns(self, capsys, install_root):
+        main(["Foo", "sh", "--unset", "Path"])
+        assert "--unset only applies with --edit" in capsys.readouterr().err
+
+    def test_missing_desktop_entry_group_is_an_error(self, install_root):
+        apps, _icons = install_root
+        apps.mkdir(parents=True, exist_ok=True)
+        (apps / "broken.desktop").write_text("[Desktop Action x]\nName=x\n")
+        with pytest.raises(SystemExit, match="no \\[Desktop Entry\\] group"):
+            main(["broken", "--edit", "--comment", "x"])
