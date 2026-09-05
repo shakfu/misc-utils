@@ -7,6 +7,7 @@ Uses only the Python standard library.
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import re
 import shlex
@@ -147,6 +148,43 @@ def die(msg: str) -> NoReturn:
 
 def warn(msg: str) -> None:
     print("mkdesktop: warning: %s" % msg, file=sys.stderr)
+
+
+def default_file_mode() -> int:
+    """The mode open() would give a new file, honouring the umask."""
+    mask = os.umask(0)
+    os.umask(mask)
+    return 0o666 & ~mask
+
+
+def write_atomic(path: str, content: str, mode: int) -> None:
+    """Write *content* to *path* through a temporary file and a rename.
+
+    Renaming into place is atomic, so an interrupted write cannot leave a
+    half-written entry behind, and it touches the *directory* as well as the
+    file. Writing in place bumps only the file's mtime, which is not always
+    enough to make a desktop shell notice: GNOME has been seen launching a
+    stale Exec for as long as its session lives. The rename gives the shell
+    the strongest hint available, but it is not a guaranteed cache buster -
+    if a launcher still runs the old command, log out and back in.
+    """
+    directory = os.path.dirname(path) or "."
+    handle = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=directory, prefix=".mkdesktop-", delete=False
+    )
+    try:
+        with handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(handle.name, mode)
+        os.replace(handle.name, path)
+    except OSError:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
 
 
 def escape_value(value: str) -> str:
@@ -341,6 +379,182 @@ def remove_installed_icons(base: str, stem: str) -> list[str]:
                 else:
                     removed.append(candidate)
     return removed
+
+
+# What an AppImage is worth harvesting from. Each glob is extracted on its
+# own: the top-level copies are usually symlinks into one of the share trees,
+# so both ends have to come out before the link resolves.
+APPIMAGE_GLOBS = (
+    "*.desktop",
+    "usr/share/applications/*.desktop",
+    "share/applications/*.desktop",
+    "usr/share/icons/hicolor/*/apps/*",
+    "share/icons/hicolor/*/apps/*",
+    "usr/share/pixmaps/*",
+)
+
+# Entry locations in the order they are trusted, most specific first.
+APPIMAGE_ENTRY_GLOBS = (
+    "usr/share/applications/*.desktop",
+    "share/applications/*.desktop",
+    "*.desktop",
+)
+
+
+def extract_appimage(appimage: str, workdir: str) -> str:
+    """Unpack the parts of *appimage* worth reusing; return squashfs-root."""
+    for pattern in APPIMAGE_GLOBS:
+        subprocess.run(
+            [appimage, "--appimage-extract", pattern],
+            cwd=workdir,
+            capture_output=True,
+        )
+    root = os.path.join(workdir, "squashfs-root")
+    if not os.path.isdir(root):
+        die(
+            "%s did not unpack; --appimage-extract needs a type 2 AppImage"
+            % os.path.basename(appimage)
+        )
+    return root
+
+
+def read_entry(path: str) -> dict[str, str]:
+    """Every unlocalised [Desktop Entry] key in *path*."""
+    values: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            in_group = False
+            for line in handle:
+                line = line.strip()
+                if line.startswith("["):
+                    in_group = line == "[Desktop Entry]"
+                    continue
+                if not in_group or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                # Skip GenericName[fr] and friends; the unlocalised value wins.
+                if "[" not in key:
+                    values.setdefault(key, value.strip())
+    except OSError as exc:
+        die("could not read %s: %s" % (path, exc))
+    return values
+
+
+def find_bundled_entry(root: str) -> str | None:
+    for pattern in APPIMAGE_ENTRY_GLOBS:
+        for candidate in sorted(glob.glob(os.path.join(root, pattern))):
+            # isfile follows symlinks, so a link whose target was not
+            # extracted is skipped rather than read as an empty entry.
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+def find_bundled_icon(root: str, name: str | None) -> str | None:
+    """Best icon in the extraction: the largest square bitmap, else an SVG."""
+
+    def candidates(match_name: bool) -> list[str]:
+        found: list[str] = []
+        for dirpath, _dirs, files in os.walk(root):
+            for filename in files:
+                stem, suffix = os.path.splitext(filename)
+                if suffix.lower() not in THEME_ICON_SUFFIXES:
+                    continue
+                if match_name and name and stem != name:
+                    continue
+                path = os.path.join(dirpath, filename)
+                if os.path.isfile(path):
+                    found.append(path)
+        return found
+
+    # Icon= names the icon, but not every AppImage ships one that matches it.
+    files = candidates(True) or candidates(False)
+    best_bitmap: tuple[int, str] | None = None
+    best_svg: str | None = None
+    for path in files:
+        if os.path.splitext(path)[1].lower() == ".svg":
+            best_svg = best_svg or path
+        else:
+            pixels = image_size(path) or 0
+            if best_bitmap is None or pixels > best_bitmap[0]:
+                best_bitmap = (pixels, path)
+    # A scalable icon beats a bitmap too small to be worth installing.
+    if best_bitmap and best_bitmap[0] >= 48:
+        return best_bitmap[1]
+    return best_svg or (best_bitmap[1] if best_bitmap else None)
+
+
+def exec_field_code(bundled_exec: str) -> str:
+    """The file or URL field code of a bundled Exec, if it has one."""
+    for code in FILE_FIELD_CODES:
+        if code in bundled_exec:
+            return code
+    return ""
+
+
+def apply_appimage_defaults(args: argparse.Namespace, workdir: str) -> None:
+    """Fill in the options the user did not type from the AppImage itself."""
+    appimage = os.path.abspath(os.path.expanduser(args.from_appimage))
+    if not os.path.isfile(appimage):
+        die("no such file: %s" % appimage)
+    if not os.access(appimage, os.X_OK):
+        die("%s is not executable; chmod +x it first" % appimage)
+
+    root = extract_appimage(appimage, workdir)
+    entry = find_bundled_entry(root)
+    values = read_entry(entry) if entry else {}
+    if not values:
+        warn(
+            "no bundled desktop entry in %s; only an icon can be reused"
+            % os.path.basename(appimage)
+        )
+
+    given = set(args.given)
+
+    def fill(dest: str, value: str | None, listed: bool = False) -> None:
+        if not value or dest in given:
+            return
+        setattr(args, dest, [value] if listed else value)
+        given.add(dest)
+
+    if not args.name:
+        args.name = (
+            values.get("Name")
+            or os.path.splitext(os.path.basename(appimage))[0]
+        )
+    if not args.executable:
+        # The AppImage path given is the one to launch: it may well be a
+        # stable symlink, and resolving it would defeat the point.
+        code = exec_field_code(values.get("Exec", ""))
+        args.executable = " ".join(
+            part for part in (shlex.quote(appimage), code) if part
+        )
+        given.add("executable")
+
+    fill("generic_name", values.get("GenericName"))
+    fill("comment", values.get("Comment"))
+    fill("categories", values.get("Categories"), listed=True)
+    fill("keywords", values.get("Keywords"), listed=True)
+    fill("mime_type", values.get("MimeType"), listed=True)
+    fill("wm_class", values.get("StartupWMClass"))
+    if "terminal" not in given and values.get("Terminal", "").lower() == "true":
+        args.terminal = True
+        given.add("terminal")
+
+    if "icon" not in given:
+        icon = find_bundled_icon(root, values.get("Icon"))
+        if icon:
+            args.icon = icon
+            # The extraction is deleted on the way out, so a path in Icon=
+            # would dangle. The file has to be copied into the theme.
+            args.install_icon = True
+            given.add("icon")
+        else:
+            warn("no icon found in %s" % os.path.basename(appimage))
+
+    # --edit applies exactly the options it was given, harvested ones included.
+    args.given = frozenset(given)
 
 
 def slugify(name: str) -> str:
@@ -673,8 +887,7 @@ def edit_entry(
         return 0 if validate_content(content) else 1
 
     try:
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(content)
+        write_atomic(path, content, os.stat(path).st_mode & 0o7777)
     except OSError as exc:
         die("could not write %s: %s" % (path, exc))
 
@@ -747,6 +960,8 @@ def build_parser(explicit: bool = False) -> argparse.ArgumentParser:
   mkdesktop.py Editor "/opt/app/bin/app --no-sandbox %U" --dry-run
   mkdesktop.py Term kitty --action "New Window=kitty --single-instance"
   mkdesktop.py Foo /opt/foo/foo --icon foo.png --install-icon
+  mkdesktop.py --from-appimage /opt/apps/audacity.AppImage
+  mkdesktop.py Audacity --from-appimage /opt/apps/audacity.AppImage
   mkdesktop.py --list
   mkdesktop.py "VCV Rack 2 Pro" --edit --wm-class GLFW-Application
   mkdesktop.py "VCV Rack 2 Pro" --edit --unset Path
@@ -761,6 +976,11 @@ def build_parser(explicit: bool = False) -> argparse.ArgumentParser:
         nargs="?",
         help="path to the executable, or a PATH command; may include arguments "
         "if quoted",
+    )
+    parser.add_argument(
+        "--from-appimage", metavar="PATH",
+        help="take Name, Icon, Categories and the rest from an AppImage's own "
+        "bundled entry; PATH becomes Exec unless an executable is given",
     )
     parser.add_argument("-i", "--icon", help="icon file path, or a theme icon name")
     parser.add_argument(
@@ -867,6 +1087,19 @@ def target_dir(args: argparse.Namespace) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.from_appimage and not (args.list or args.remove):
+        # The harvested icon lives inside the extraction, so everything that
+        # reads it has to run before the temporary directory goes away.
+        workdir = tempfile.mkdtemp(prefix="mkdesktop-appimage-")
+        try:
+            apply_appimage_defaults(args, workdir)
+            return run(args)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+    return run(args)
+
+
+def run(args: argparse.Namespace) -> int:
     directory = target_dir(args)
 
     writes = not (args.dry_run or args.list)
@@ -958,9 +1191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         os.makedirs(directory, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(content)
-        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+        write_atomic(path, content, default_file_mode() | stat.S_IXUSR)
     except OSError as exc:
         die("could not write %s: %s" % (path, exc))
 
