@@ -2,7 +2,9 @@
 
 ## 2026-09-26
 
-- Added `gitprojects.py`: `scan DIR` and `github USER` write a `{name: clone_url}` JSON file from local `origin` remotes or `gh repo list`; `clone JSON DEST` clones each into `DEST/<name>`, skipping names that exist. Keys are local directory names, not URL stems, so a renamed checkout keeps its name. Names that are not a single path component are rejected, since they would clone outside `DEST`.
+- Rewrote `repodb.py` on SQLite and folded `gitprojects.py` into it. Subcommands: `scan DIR` and `github USER` (via `gh repo list`) add projects; `export`/`import` move `{name: url}` JSON; `clone DEST` clones each into `DEST/<name>`, skipping names that exist; `remove OWNER/NAME|NAME ...` deletes rows, all or none, refusing a bare name two owners share, and `remove --owner USER --all` deletes all of one owner's rows, `--all` being required so one flag cannot delete many; cloned directories are kept. `info` reports format, counts, hosts, top owners and names shared across owners, opening the file read-only. `list` replaces the old flags. Rows are keyed by `(owner, name)`, owner being the first path component after the host in the URL, for any host. `--owner` filters `export`, `list` and `clone`, and `-g` groups them: `{owner: {name: url}}` JSON, an indented listing, or `DEST/<owner>/<name>`. `import` and `clone --json` read either JSON form, taking owner from the URL rather than the group key.
+
+  Owner is required (`NOT NULL`, non-empty), so local-path and `file://` remotes are skipped by `scan` and rejected by `import`. Keying on name alone let `bob/r` silently replace `alice/r`; the flat forms now reject a name held by two owners, compared case-insensitively since `Foo` and `foo` are one directory on macOS, and point to `-g`. The old `dbm` store held URLs as `Path`, which collapses `https://` to `https:/`. A table with any other primary key is refused rather than migrated. Names and owners that are not a single path component are rejected, since they would clone outside `DEST`. The default database is `~/.local/share/repodb/repos.sqlite`.
 
 ## 2026-08-29
 
