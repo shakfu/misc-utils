@@ -3,7 +3,7 @@
 Useful utilities and scripts
 
 ## Repository Management
-- `repodb.py` - SQLite database of git project URLs by owner, from local dirs or GitHub (`gh`); JSON export/import and clone (`listrepos` alias lists them)
+- `repodb` - moved to https://github.com/shakfu/repodb
 - `git_status_checker.py` - Check git status across repositories
 
 ## Package Management
