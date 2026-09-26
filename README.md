@@ -6,6 +6,7 @@ Useful utilities and scripts
 - `repodb.py` - Git repository database management for tracking remote URLs
 - `listrepos.py` - List git repositories from database
 - `git_status_checker.py` - Check git status across repositories
+- `gitprojects.py` - Export local or GitHub projects to `projects.json`; clone them from it
 
 ## Package Management
 - `pip_tools.py` - Python package management utilities (list, update packages)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-26
+
+- Added `gitprojects.py`: `scan DIR` and `github USER` write a `{name: clone_url}` JSON file from local `origin` remotes or `gh repo list`; `clone JSON DEST` clones each into `DEST/<name>`, skipping names that exist. Keys are local directory names, not URL stems, so a renamed checkout keeps its name. Names that are not a single path component are rejected, since they would clone outside `DEST`.
+
 ## 2026-08-29
 
 - Added `--edit` to `mkdesktop.py`: `mkdesktop.py NAME --edit [options]` changes only the options actually given, in the entry `NAME` already identifies, instead of forcing a full re-run with `--force`. Telling "set this to false" from "leave this alone" needs more than an argparse default, so the CLI is parsed twice, the second pass with `argument_default=SUPPRESS`, and the resulting namespace records what was really typed. Keys keep their position and new ones join the end of the group; comments, vendor `X-` keys and unknown keys are preserved, because an entry may have been hand-written and normalising it is not this tool's business. `--unset KEY` deletes a key outright, and `--action` under `--edit` rewrites `Actions=` and its `[Desktop Action]` groups together so the two cannot drift apart.
