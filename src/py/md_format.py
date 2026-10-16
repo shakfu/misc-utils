@@ -35,7 +35,6 @@ import re
 import sys
 import textwrap
 from pathlib import Path
-from typing import Callable, Collection, Sequence
 
 DEFAULT_EXCLUDE = {".git", ".build", "build", "node_modules", ".venv", "venv"}
 
@@ -54,10 +53,21 @@ def is_bullet(line: str) -> bool:
 def space_bullets(text: str) -> str:
     """Insert a blank line between adjacent list items. Idempotent."""
     lines = text.splitlines()
-    out: list[str] = []
+    start = front_matter_end(lines)
+    out: list[str] = lines[:start]
     prev_in_list = False
-    for line in lines:
-        if is_bullet(line) and prev_in_list and out and out[-1] != "":
+    fence = None
+    for line in lines[start:]:
+        # Fenced code is verbatim: list-like lines inside it are not bullets.
+        if fence:
+            out.append(line)
+            if closes_fence(fence, line):
+                fence = None
+            continue
+        m = FENCE_RE.match(line)
+        if m:
+            fence = m.group(1)
+        elif is_bullet(line) and prev_in_list and out and out[-1] != "":
             out.append("")
         out.append(line)
         if line.strip() == "":
@@ -82,73 +92,141 @@ LIST_RE = re.compile(r'^(\s*)([-*+]|\d+[.)])(\s+)(.*)$')
 HEADING_RE = re.compile(r'^\s{0,3}#{1,6}(\s|$)')
 HR_RE = re.compile(r'^\s*([-*_])(\s*\1){2,}\s*$')
 FENCE_RE = re.compile(r'^\s*(```+|~~~+)')
+SETEXT_RE = re.compile(r'^ {0,3}=+\s*$')
+QUOTE_RE = re.compile(r'^(\s*)> ?')
+LINK_DEF_RE = re.compile(r'^ {0,3}\[[^\]]+\]:')
+HTML_RE = re.compile(r'^ {0,3}(<!--|</?[A-Za-z][\w-]*(\s|/?>|$))')
+HARD_BREAK_RE = re.compile(r'( {2,}|\\)$')
+
+
+def front_matter_end(lines):
+    """Index of the first line after a leading YAML front matter block, or 0."""
+    if lines and lines[0].rstrip() == '---':
+        for j in range(1, len(lines)):
+            if lines[j].rstrip() in ('---', '...'):
+                return j + 1
+    return 0
+
+
+def closes_fence(marker, line):
+    m = FENCE_RE.match(line)
+    return bool(m) and m.group(1)[0] == marker[0] and len(m.group(1)) >= len(marker)
 
 
 class Unit:
     """A reflowable logical block: one paragraph or one list item.
 
     prefix       printed before the first rendered line (indent + any marker).
-    cont_indent  indent applied to wrapped continuation lines (wrap mode only).
+    cont_indent  indent for wrapped lines and lines after a hard break.
     parts        the source line fragments, joined with single spaces.
     """
 
     __slots__ = ('prefix', 'cont_indent', 'parts')
 
-    def __init__(self, prefix: str, cont_indent: str, first: str) -> None:
+    def __init__(self, prefix, cont_indent, first):
         self.prefix = prefix
         self.cont_indent = cont_indent
-        self.parts: list[str] = [first]
+        self.parts = [first]
 
-    def text(self) -> str:
-        return ' '.join(p.strip() for p in self.parts if p.strip())
+    def segments(self):
+        """Yield (text, break) per hard-break-delimited run; break is '' or the trailing spaces."""
+        cur = []
+        for p in self.parts:
+            m = HARD_BREAK_RE.search(p)
+            if m and m.group(1) != '\\':
+                cur.append(p[:m.start()].strip())
+            else:
+                cur.append(p.strip())
+            if m:
+                yield ' '.join(x for x in cur if x), '' if m.group(1) == '\\' else m.group(1)
+                cur = []
+        if cur:
+            yield ' '.join(x for x in cur if x), ''
 
 
-def _render(unit: Unit, mode: str, width: int) -> list[str]:
-    text = unit.text()
-    if mode == 'unwrap':
-        return [unit.prefix + text]
-    wrapped = textwrap.fill(
-        text,
-        width=width,
-        initial_indent=unit.prefix,
-        subsequent_indent=unit.cont_indent,
-        break_long_words=False,   # don't split a long URL/token mid-word
-        break_on_hyphens=False,   # don't split hyphenated identifiers
-    )
-    return wrapped.split('\n')
+def _render(unit, mode, width):
+    lines = []
+    segs = list(unit.segments())
+    segs[-1] = (segs[-1][0], '')  # trailing spaces at block end are not a break
+    for i, (text, brk) in enumerate(segs):
+        indent = unit.prefix if i == 0 else unit.cont_indent
+        if mode == 'unwrap':
+            seg = [indent + text]
+        else:
+            seg = textwrap.fill(
+                text,
+                width=width,
+                initial_indent=indent,
+                subsequent_indent=unit.cont_indent,
+                break_long_words=False,   # don't split a long URL/token mid-word
+                break_on_hyphens=False,   # don't split hyphenated identifiers
+            ).split('\n')
+        seg[-1] += brk
+        lines.extend(seg)
+    return lines
 
 
 def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
     """Reflow a document string and return the transformed string."""
     had_trailing_nl = text.endswith('\n')
-    out: list[str] = []
-    unit: Unit | None = None
-    in_fence = False
-    fence_marker: str | None = None
+    lines = text.splitlines()
+    start = front_matter_end(lines)
+    out = lines[:start]           # front matter is emitted verbatim
+    unit = None
+    fence_marker = None
+    html_end = None               # None, '' (ends at blank line), or '-->'
+    quote = []                    # blockquote lines with the '>' stripped
+    quote_indent = ''
 
-    def flush() -> None:
+    def flush():
         nonlocal unit
         if unit is not None:
             out.extend(_render(unit, mode, width))
             unit = None
 
-    for raw in text.splitlines():
-        line = raw
+    def flush_quote():
+        # Reflow the quote's content as a document, then re-add the marker.
+        if quote:
+            inner = reflow('\n'.join(quote), mode, max(1, width - len(quote_indent) - 2))
+            out.extend(quote_indent + ('> ' + q if q else '>') for q in inner.split('\n'))
+            quote.clear()
 
+    for line in lines[start:]:
         # Fenced code: emit verbatim until a matching closing fence.
-        m = FENCE_RE.match(line)
-        if in_fence:
+        if fence_marker:
             out.append(line)
-            closing = m.group(1) if m else None
-            if (closing and fence_marker
-                    and closing[0] == fence_marker[0]
-                    and len(closing) >= len(fence_marker)):
-                in_fence, fence_marker = False, None
+            if closes_fence(fence_marker, line):
+                fence_marker = None
             continue
+
+        # HTML block: verbatim until a blank line, or '-->' for a comment.
+        if html_end is not None:
+            if html_end == '' and line.strip() == '':
+                html_end = None
+            elif html_end and html_end in line:
+                html_end = None
+                out.append(line)
+                continue
+            else:
+                out.append(line)
+                continue
+
+        # Blockquote: collect, reflow when the quote ends. Four or more spaces
+        # with nothing open is indented code, not a quote.
+        qm = QUOTE_RE.match(line)
+        if qm and (quote or unit is not None or len(qm.group(1)) < 4):
+            flush()
+            if not quote:
+                quote_indent = qm.group(1)
+            quote.append(line[qm.end():])
+            continue
+        flush_quote()
+
+        m = FENCE_RE.match(line)
         if m:
             flush()
             out.append(line)
-            in_fence, fence_marker = True, m.group(1)
+            fence_marker = m.group(1)
             continue
 
         # Blank line: paragraph/list-item separator.
@@ -157,8 +235,19 @@ def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
             out.append(line)
             continue
 
-        # Pass-through structures (heading, horizontal rule, table row).
-        if HEADING_RE.match(line) or HR_RE.match(line) or '|' in line:
+        hm = HTML_RE.match(line) if unit is None else None
+        if hm:
+            out.append(line)
+            if hm.group(1) == '<!--':
+                html_end = None if '-->' in line else '-->'
+            else:
+                html_end = ''
+            continue
+
+        # Pass-through structures (heading, setext underline, horizontal rule,
+        # link reference definition, table row).
+        if (HEADING_RE.match(line) or SETEXT_RE.match(line) or HR_RE.match(line)
+                or LINK_DEF_RE.match(line) or '|' in line):
             flush()
             out.append(line)
             continue
@@ -185,6 +274,7 @@ def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
             unit.parts.append(line)
 
     flush()
+    flush_quote()
     result = '\n'.join(out)
     if had_trailing_nl:
         result += '\n'
@@ -195,13 +285,7 @@ def reflow(text: str, mode: str = 'unwrap', width: int = 88) -> str:
 # Shared CLI plumbing
 # --------------------------------------------------------------------------- #
 
-def gather_files(
-    parser: argparse.ArgumentParser,
-    paths: Sequence[str],
-    recursive: bool,
-    glob: str,
-    exclude: Collection[str],
-) -> list[Path]:
+def gather_files(parser, paths, recursive, glob, exclude):
     """Expand PATH arguments into a sorted list of files to process.
 
     Directory PATHs are only allowed with --recursive, in which case they are
@@ -227,11 +311,7 @@ def gather_files(
     return files
 
 
-def run(
-    parser: argparse.ArgumentParser,
-    args: argparse.Namespace,
-    transform: Callable[[str], str],
-) -> int:
+def run(parser, args, transform) -> int:
     """Drive `transform` (str -> str) over stdin or the resolved file list."""
     if args.in_place and not args.paths:
         parser.error("--in-place requires a PATH (cannot rewrite stdin)")
@@ -326,7 +406,7 @@ SUBCOMMANDS = ("space", "reflow", "all")
 DEFAULT_COMMAND = "all"
 
 
-def inject_default_command(argv: Sequence[str]) -> Sequence[str]:
+def inject_default_command(argv):
     """Prepend DEFAULT_COMMAND unless argv already names a subcommand.
 
     Lets `md_format.py notes.md` mean `md_format.py all notes.md` while keeping
@@ -394,7 +474,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv=None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv and not sys.stdin.isatty():
